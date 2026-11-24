@@ -1,0 +1,20 @@
+{
+  "identifier": "main",
+  "windows": ["main"],
+  "permissions": [
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "core:event:allow-emit",
+    "allow-media-snapshot",
+    "allow-media-artwork",
+    "allow-media-select",
+    "allow-media-refresh",
+    "allow-overlay-show",
+    "allow-overlay-hide",
+    "allow-overlay-click-through",
+    "allow-overlay-configure",
+    "allow-overlay-state",
+    "allow-get-settings",
+    "allow-save-settings"
+  ]
+}

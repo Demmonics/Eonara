@@ -1,0 +1,12 @@
+{
+  "identifier": "overlay-read",
+  "windows": ["overlay"],
+  "permissions": [
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "allow-media-snapshot",
+    "allow-media-artwork",
+    "allow-overlay-state",
+    "allow-get-settings"
+  ]
+}

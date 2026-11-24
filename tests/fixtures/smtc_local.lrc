@@ -1,0 +1,10 @@
+[ti:LyricMotion QA Local Track]
+[ar:LyricMotion QA]
+[al:Offline SMTC Fixture]
+[length:01:00]
+[00:00.000]<00:00.000>Local <00:00.700>fixture <00:01.600>connected
+[00:03.000]<00:03.000>First <00:03.750>position <00:04.400>is <00:04.750>moving
+[00:12.000]<00:12.000>Before <00:13.000>the <00:13.500>seek
+[00:30.500]<00:30.500>Seek <00:31.000>landed <00:31.750>here
+[00:34.000]<00:34.000>Playback <00:35.000>resumed
+[00:57.000]<00:57.000>End <00:57.750>of <00:58.000>test

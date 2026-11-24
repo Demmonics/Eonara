@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<meta charset="UTF-8">
+<title>LyricMotion TTML parser tests</title>
+<pre id="result">Running</pre>
+<script type="module">
+  import { parseLyrics } from './parse.ts'
+
+  const result = document.querySelector('#result')
+  const ttml = content => `<tt xmlns="http://www.w3.org/ns/ttml">${content}</tt>`
+  const cases = [
+    ['namespaced, relative word cues and XML entities', () => {
+      const data = parseLyrics(ttml(`<body begin="1s"><div><p begin="00:00:02.500" dur="2s">
+        <span begin="0ms" end="500ms">Here</span> <span begin="500ms" end="1.5s">&amp; there</span>
+      </p></div></body>`), 'ttml')
+      equal(data, { quality: 'word', lines: [{ startMs: 3500, endMs: 5500, text: 'Here & there', words: [
+        { text: 'Here ', startMs: 3500, endMs: 4000 }, { text: '& there', startMs: 4000, endMs: 5000 },
+      ] }] })
+    }],
+    ['tracks sequential clips and frame timings', () => {
+      const data = parseLyrics(ttml('<body><div timeContainer="seq"><p dur="30f">A</p><p dur="500ms">B<br/>C</p></div></body>'), 'ttml')
+      equal(data, { quality: 'line', lines: [{ startMs: 0, endMs: 1000, text: 'A' },
+        { startMs: 1000, endMs: 1500, text: 'B\nC' }] })
+    }],
+    ['Apple word profile uses absolute media time', () => {
+      const data = parseLyrics(`<tt xmlns="http://www.w3.org/ns/ttml" xmlns:i="http://music.apple.com/lyric-ttml-internal" i:timing="Word">
+        <body><div begin="00:02.000"><p begin="00:03.000" end="00:05.000">
+          <span begin="00:03.500" end="00:04.000">Glowing</span>
+        </p></div></body></tt>`, 'ttml')
+      equal(data.lines[0]?.words?.[0]?.startMs, 3500)
+    }],
+    ['blocks DTDs and rejects broken XML', () => {
+      equal(parseLyrics('<!DOCTYPE tt [<!ENTITY x "unsafe">]><tt/>', 'ttml').quality, 'unavailable')
+      equal(parseLyrics('<tt><body></tt>', 'ttml').quality, 'unavailable')
+    }],
+  ]
+  function equal(actual, expected) {
+    if (actual === expected) return
+    if (!actual || !expected || typeof actual !== 'object' || typeof expected !== 'object'
+      || Object.keys(actual).length !== Object.keys(expected).length) {
+      throw new Error(`Expected ${JSON.stringify(expected)}; received ${JSON.stringify(actual)}`)
+    }
+    for (const key of Object.keys(expected)) equal(actual[key], expected[key])
+  }
+  let passed = 0
+  result.textContent = ''
+  for (const [name, test] of cases) {
+    try {
+      test()
+      passed++
+      result.textContent += `PASS ${name}\n`
+    } catch (error) {
+      result.textContent += `FAIL ${name}: ${error.message}\n`
+    }
+  }
+  result.dataset.passed = String(passed === cases.length)
+</script>
+</html>

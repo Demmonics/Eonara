@@ -1,0 +1,54 @@
+[
+  {
+    "name": "passive lyric-area click",
+    "point": [0.50, 0.50],
+    "receiver": "click",
+    "hit": "receiver",
+    "foreground": "receiver",
+    "pass_through_style": true
+  },
+  {
+    "name": "passive transparent-corner click",
+    "point": [0.03, 0.03],
+    "receiver": "click",
+    "hit": "receiver",
+    "foreground": "receiver",
+    "pass_through_style": true
+  },
+  {
+    "name": "click-through disabled (lyric area)",
+    "prompt": "In the LyricMotion main window, turn Click-through OFF but keep Show desktop lyrics ON.",
+    "point": [0.50, 0.50],
+    "receiver": "none",
+    "hit": "app",
+    "foreground": "receiver",
+    "pass_through_style": false
+  },
+  {
+    "name": "click-through disabled (whole-window corner)",
+    "point": [0.03, 0.03],
+    "receiver": "none",
+    "hit": "app",
+    "foreground": "receiver",
+    "pass_through_style": false
+  },
+  {
+    "name": "native recovery shortcut hides overlay and restores pass-through",
+    "point": [0.50, 0.50],
+    "receiver": "click",
+    "hit": "receiver",
+    "foreground": "receiver",
+    "overlay": "hidden",
+    "pass_through_style": true,
+    "recovery_shortcut": true
+  },
+  {
+    "name": "reopened overlay remains passive",
+    "prompt": "Use the LyricMotion tray Show / Hide Overlay command to reopen. Do not change Click-through.",
+    "point": [0.50, 0.50],
+    "receiver": "click",
+    "hit": "receiver",
+    "foreground": "receiver",
+    "pass_through_style": true
+  }
+]
