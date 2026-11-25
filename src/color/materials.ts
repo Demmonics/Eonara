@@ -33,27 +33,28 @@ export function readableInk(surface: string) {
 export function deriveMaterials(palette: DynamicPalette, tint: number, opacity: number) {
   // The dominant lyric remains neutral; colour goes into backing, edge and control roles.
   const t = clamp(Number.isFinite(tint) ? tint : .55);
-  const materialBase = '#11131b';
-  const surface = labToHex(mixLab(hexToLab(materialBase), hexToLab(palette.surface), t));
+  const materialBase = '#0f121a';
+  const surface = labToHex(mixLab(hexToLab(materialBase), hexToLab(palette.surface), t * 0.94));
   const quietText = palette.mutedForeground;
   const safeOpacity = materialOpacity(surface, quietText, opacity);
   // If the requested ink can't clear even an opaque tinted surface, use a darker neutral
   // and a known light ink instead of reporting a contrast guarantee after capping opacity.
-  const safeSurface = safeOpacity === null ? '#11131b' : surface;
+  const safeSurface = safeOpacity === null ? '#0f121a' : surface;
   const safeMuted = safeOpacity === null ? '#c9c9d4' : quietText;
-  const cardBackdrop = labToHex(mixLab(hexToLab('#141722'), hexToLab(palette.surface), .45 * t));
+  const cardBackdrop = labToHex(mixLab(hexToLab('#121622'), hexToLab(palette.surface), .54 * t));
   const overlayOpacity = materialOpacity(safeSurface, palette.foreground, Math.max(.74, opacity), 4.5) ?? 1;
+  const edgeMid = mixLab(hexToLab(palette.accent), hexToLab(palette.mutedForeground), .54);
   return {
     atmosphere: labToHex(mixLab(hexToLab(palette.primary), hexToLab(palette.secondary), .52)),
     toolbar: safeSurface,
-    popover: labToHex(mixLab(hexToLab(safeSurface), hexToLab(palette.background), .27)),
-    gallery: labToHex(mixLab(hexToLab('#090b10'), hexToLab(palette.background), .38)),
+    popover: labToHex(mixLab(hexToLab(safeSurface), hexToLab(palette.background), .24)),
+    gallery: labToHex(mixLab(hexToLab('#080a10'), hexToLab(palette.background), .42)),
     cardBackdrop,
     overlaySurface: safeSurface,
     overlayOpacity,
-    border: labToHex(mixLab(hexToLab(palette.accent), hexToLab(palette.mutedForeground), .58)),
-    specular: labToHex(mixLab(hexToLab(palette.accent), hexToLab('#ffffff'), .7)),
-    shadow: labToHex(mixLab(hexToLab('#000000'), hexToLab(palette.background), .42)),
+    border: labToHex(mixLab(edgeMid, hexToLab(palette.foreground), .14)),
+    specular: labToHex(mixLab(hexToLab(palette.accent), hexToLab('#ffffff'), .72)),
+    shadow: labToHex(mixLab(hexToLab('#000000'), hexToLab(palette.background), .38)),
     muted: safeMuted,
     opacity: safeOpacity ?? 1,
     accentInk: readableInk(normalizeHex(palette.accent) ?? '#bab7d7'),

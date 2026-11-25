@@ -50,19 +50,19 @@ export function manualPalette(primary: string, secondary: string, accent: string
 }
 
 const styleSeedSwatches: Record<string, readonly [string, string, string]> = {
-  ship: ['#245676', '#4a85a8', '#efc499'],
-  fisheye: ['#662a5b', '#ad4c6c', '#f5bb96'],
-  visual: ['#1c5c4b', '#5d915c', '#edd99b'],
-  'fisheye-visual': ['#6d263a', '#b55e55', '#f2c89f'],
-  codestyle: ['#234482', '#7d3650', '#f28a7a'],
-  'codestyle-visual': ['#452d78', '#96407d', '#f2b8c4'],
-  branches: ['#185448', '#428e72', '#c2e8c0'],
-  web: ['#703624', '#b5683a', '#f6cd94'],
-  constellation: ['#332e6e', '#685ba8', '#d5d1f6'],
-  'message-thread': ['#24447a', '#426494', '#94c5ff'],
-  payments: ['#503e34', '#7f624e', '#f5c698'],
-  'map-journey': ['#214e4c', '#487e75', '#f2c48e'],
-  notifications: ['#1f3b68', '#456598', '#a8daff'],
+  ship: ['#124b76', '#2e80af', '#eea974'],
+  fisheye: ['#671a5c', '#ba3367', '#f5ab8c'],
+  visual: ['#125a4b', '#2c8e6f', '#e8d38c'],
+  'fisheye-visual': ['#6b1d38', '#b94853', '#f3c195'],
+  codestyle: ['#1d3e80', '#823456', '#f28c7b'],
+  'codestyle-visual': ['#3e2876', '#983f82', '#f3b7c8'],
+  branches: ['#0e4b3a', '#2c8a5f', '#bce7be'],
+  web: ['#6b301d', '#b85e33', '#f6ca8e'],
+  constellation: ['#2b266a', '#5f52a8', '#d2cef8'],
+  'message-thread': ['#143e80', '#2d6cc2', '#92c6ff'],
+  payments: ['#47352c', '#7e5e48', '#f3c594'],
+  'map-journey': ['#184c4b', '#3c7d76', '#f2c18a'],
+  notifications: ['#183563', '#385f98', '#a4d6ff'],
 };
 
 const demoStyleCache = new Map<string, DynamicPalette>();
@@ -71,7 +71,7 @@ export function demoStylePalette(styleId: string): DynamicPalette {
   const cached = demoStyleCache.get(styleId);
   if (cached) return cached;
   const seed = styleSeedSwatches[styleId];
-  const palette = seed ? semanticPalette(hexToLab(seed[0]), hexToLab(seed[1]), hexToLab(seed[2])) : defaultPalette;
+  const palette = seed ? semanticPalette(hexToLab(seed[0]), hexToLab(seed[1]), hexToLab(seed[2]), true) : defaultPalette;
   demoStyleCache.set(styleId, palette);
   return palette;
 }

@@ -3,6 +3,9 @@ import { defaults, isTauri } from './model';
 import { demoDuration, demoName } from './demo';
 import { formatTransportTime, projectTransport } from './transport';
 import { decodeGradientPreset } from './color/gradientState';
+import { readableInk } from './color/materials';
+import { normalizeHex } from './color/oklab';
+import { demoStylePalette } from './color/palette';
 
 const paths: Record<string, string> = {
   size: '<path d="M4 19 9 5l5 14M6 14h6m3 5 3-8 3 8m-5-2h4"/>',
@@ -51,7 +54,7 @@ const qualityNames: Record<string, string> = { word: 'Word-level synchronized', 
 const button = (label: string, action: string, glyph: string, css = 'icon-button') =>
   `<button type="button" class="${css}" data-action="${action}" title="${label}" aria-label="${label}">${icon(glyph)}</button>`;
 const panelBtn = (label: string, action: string, glyph: string) =>
-  `<button type="button" data-panel-trigger="${action}" aria-expanded="false" aria-controls="panel">${icon(glyph)}${label}</button>`;
+  `<button type="button" data-panel-trigger="${action}" aria-expanded="false" aria-controls="panel">${icon(glyph)}<span>${label}</span></button>`;
 const toggle = (label: string, key: keyof Settings, s: Settings, disabled = false) =>
   `<label class="setting-row"><span>${label}</span><input class="switch" type="checkbox" data-setting="${key}" ${s[key] ? 'checked' : ''} ${disabled ? 'disabled' : ''}></label>`;
 const range = (label: string, key: keyof Settings, s: Settings, min: number, max: number, step = 1, units = '%') =>
@@ -84,14 +87,17 @@ export class WorkspaceUi {
     host.innerHTML = `<div class="workspace">
       <section class="hero" aria-label="Style preview">
         <div class="stage" aria-hidden="true"></div><div class="stage-lower"></div>
-        <div class="top">
-          <div class="brand">${mark}<span>LyricMotion</span></div>
+        <header class="top" data-tauri-drag-region>
+          <div class="brand" data-tauri-drag-region>${mark}<span>LyricMotion</span></div>
           <nav class="toolbar glass" aria-label="Preview settings">${panelBtn('Size','size','size')}${panelBtn('Font','font','font')}${panelBtn('Screen','screen','screen')}${panelBtn('Aesthetics','aesthetics','sparkle')}</nav>
-          <nav class="players" aria-label="Media sessions">
-            ${this.playerButton('Spotify', 'spotify')}${this.playerButton('Apple Music', 'music')}${this.playerButton('Other players', 'players')}
-            ${button('Refresh media sessions','refresh','refresh')}
-          </nav>
-        </div>
+          <div class="top-right" data-tauri-drag-region>
+            <nav class="players glass" aria-label="Media sessions">
+              ${this.playerButton('Spotify', 'spotify')}${this.playerButton('Apple Music', 'music')}${this.playerButton('Other players', 'players')}
+              <span class="cluster-divider" aria-hidden="true"></span>
+              ${button('Refresh media sessions','refresh','refresh','icon-button compact-icon')}
+            </nav>
+          </div>
+        </header>
         <div id="panel" class="popover glass" role="region" aria-label="Settings" hidden></div>
         <div class="status-banner" role="status" hidden></div>
         ${button('Previous style','previous','previous','icon-button arrow previous')}${button('Next style','next','next','icon-button arrow next')}
@@ -111,10 +117,18 @@ export class WorkspaceUi {
         </div><nav class="pages" aria-label="Styles"></nav>
       </section>
       <section class="gallery" aria-label="Style gallery">
-        <div class="gallery-head"><h2 class="gallery-heading">All styles</h2><div class="gallery-actions">
-          <label class="sr-only" for="gallery-filter">Filter styles</label><select id="gallery-filter"><option value="">All categories</option>${[...new Set(styles.map(s => s.category))].map(s => `<option>${escapeHtml(s)}</option>`).join('')}<option value="_pinned">Pinned</option></select>
-          <button type="button" class="flat" data-action="expand" aria-expanded="false">${icon('down')} <span>Expand</span></button>
-        </div></div><div class="tiles"></div>
+        <div class="gallery-head">
+          <div class="gallery-title-wrap"><h2 class="gallery-heading">All styles</h2><span class="gallery-count" aria-live="polite"></span></div>
+          <div class="gallery-actions">
+            <div class="gallery-nav" aria-label="Scroll styles">
+              ${button('Previous styles','gallery-prev','previous','icon-button gallery-step')}
+              ${button('Next styles','gallery-next','next','icon-button gallery-step')}
+            </div>
+            <label class="sr-only" for="gallery-filter">Filter styles</label><select id="gallery-filter"><option value="">All categories</option>${[...new Set(styles.map(s => s.category))].map(s => `<option>${escapeHtml(s)}</option>`).join('')}<option value="_pinned">Pinned</option></select>
+            <button type="button" class="flat expand-toggle" data-action="expand" aria-expanded="false">${icon('down')} <span>Expand</span></button>
+          </div>
+        </div>
+        <div class="tiles"></div>
       </section>
     </div>`;
     el<HTMLInputElement>(host, '[data-scrub]').addEventListener('input', e => this.handlers.seek((e.target as HTMLInputElement).valueAsNumber));
@@ -136,7 +150,8 @@ export class WorkspaceUi {
       if (performance.now() - this.#lastWheel < 310) return;
       this.#lastWheel = performance.now(); this.handlers.action(e.deltaX < 0 ? 'previous' : 'next');
     }, { passive: false });
-    window.addEventListener('resize', () => this.#positionPanel());
+    el(host, '.tiles').addEventListener('scroll', () => this.#updateGalleryNav(), { passive: true });
+    window.addEventListener('resize', () => { this.#positionPanel(); this.#updateGalleryNav(); });
     this.#buildTiles();
     this.update(initial);
   }
@@ -146,16 +161,40 @@ export class WorkspaceUi {
     if (this.#panel === 'font') this.#renderPanel(true);
   }
   playerButton(name: string, glyph: string) {
-    return `<button type="button" class="icon-button" data-panel-trigger="diagnostics" data-player="${name}" title="${name}" aria-label="${name} diagnostics" aria-expanded="false" aria-controls="panel">${icon(glyph)}<i class="status-dot"></i></button>`;
+    return `<button type="button" class="icon-button compact-icon" data-panel-trigger="diagnostics" data-player="${name}" title="${name}" aria-label="${name} diagnostics" aria-expanded="false" aria-controls="panel">${icon(glyph)}<i class="status-dot"></i></button>`;
   }
   #buildTiles() {
     const filtered = this.styles.filter(s => this.#category === '_pinned' ? this.data.settings.pins.includes(s.id) : !this.#category || this.#category === s.category);
     const tiles = el(this.host, '.tiles');
-    tiles.innerHTML = filtered.map(s => `<div class="tile" data-style="${escapeHtml(s.id)}"><canvas width="180" height="88" aria-hidden="true"></canvas><span class="pinmark" hidden>${icon('pin')}</span><button type="button" class="tile-label" data-action="preview" data-value="${escapeHtml(s.id)}">${escapeHtml(s.name)}</button><button type="button" class="tile-select" data-action="select-tile" data-value="${escapeHtml(s.id)}" title="Select ${escapeHtml(s.name)}" aria-label="Select ${escapeHtml(s.name)}">${icon('check')}</button></div>`).join('');
-    if (!filtered.length) tiles.innerHTML = '<p class="track-caption">No pinned styles.</p>';
+    const count = el(this.host, '.gallery-count');
+    count.textContent = `${filtered.length} ${filtered.length === 1 ? 'style' : 'styles'}`;
+    tiles.innerHTML = filtered.map(s => {
+      const p = demoStylePalette(s.id);
+      const vars = `--tile-bg:${p.background};--tile-p:${p.primary};--tile-s:${p.secondary};--tile-a:${p.accent};`;
+      return `<div class="tile" data-style="${escapeHtml(s.id)}" style="${vars}"><canvas width="180" height="88" aria-hidden="true"></canvas><span class="tile-category">${escapeHtml(s.category)}</span><span class="pinmark" hidden>${icon('pin')}</span><button type="button" class="tile-label" data-action="preview" data-value="${escapeHtml(s.id)}">${escapeHtml(s.name)}</button><button type="button" class="tile-select" data-action="select-tile" data-value="${escapeHtml(s.id)}" title="Select ${escapeHtml(s.name)}" aria-label="Select ${escapeHtml(s.name)}">${icon('check')}</button></div>`;
+    }).join('');
+    if (!filtered.length) tiles.innerHTML = '<p class="track-caption empty-filter">No pinned styles yet — pin a style to collect it here.</p>';
     el(this.host, '.pages').innerHTML = this.styles.map(s => `<button type="button" data-action="preview" data-value="${escapeHtml(s.id)}" aria-label="Preview ${escapeHtml(s.name)}" title="${escapeHtml(s.name)}"></button>`).join('');
     this.#markTiles();
+    queueMicrotask(() => this.#updateGalleryNav());
     this.handlers.action('gallery-changed');
+  }
+  #updateGalleryNav() {
+    const tiles = this.host.querySelector<HTMLElement>('.tiles');
+    const prev = this.host.querySelector<HTMLButtonElement>('[data-action="gallery-prev"]');
+    const next = this.host.querySelector<HTMLButtonElement>('[data-action="gallery-next"]');
+    if (!tiles || !prev || !next) return;
+    const hideNav = this.#all || tiles.scrollWidth <= tiles.clientWidth + 4;
+    prev.parentElement!.hidden = hideNav;
+    if (!hideNav) {
+      prev.disabled = tiles.scrollLeft <= 2;
+      next.disabled = tiles.scrollLeft + tiles.clientWidth >= tiles.scrollWidth - 2;
+    }
+  }
+  #scrollGallery(direction: -1 | 1) {
+    const tiles = el(this.host, '.tiles');
+    const step = Math.max(240, Math.round(tiles.clientWidth * 0.82));
+    tiles.scrollBy({ left: direction * step, behavior: 'smooth' });
   }
   #markTiles() {
     this.host.querySelectorAll<HTMLElement>('.tile').forEach(tile => {
@@ -174,11 +213,14 @@ export class WorkspaceUi {
     const action = target.dataset.action;
     if (!action) return;
     if (action === 'close-panel') { this.hidePanel(); return; }
+    if (action === 'gallery-prev') { this.#scrollGallery(-1); return; }
+    if (action === 'gallery-next') { this.#scrollGallery(1); return; }
     if (action === 'expand') {
       this.#all = !this.#all;
       el(this.host, '.gallery').classList.toggle('expanded', this.#all);
       target.setAttribute('aria-expanded', String(this.#all)); el(target,'span').textContent = this.#all ? 'Collapse' : 'Expand';
       if (this.#all) el(this.host, '.gallery').scrollIntoView({ block: 'start', behavior: 'smooth' });
+      this.#updateGalleryNav();
       this.handlers.action('gallery-changed'); return;
     }
     if (action === 'import-font' || action === 'import-lyrics') {
@@ -200,7 +242,9 @@ export class WorkspaceUi {
       if (points.length < 6) {
         const pal = this.data.palette;
         const color = pal[points.length % pal.length] || '#e07a5f';
-        points.push({ id: crypto.randomUUID(), x: 0.5, y: 0.5, color, spread: 1.6, intensity: 0.9 });
+        const x = Math.round((0.28 + ((points.length * 0.23) % 0.54)) * 100) / 100;
+        const y = Math.round((0.32 + ((points.length * 0.19) % 0.44)) * 100) / 100;
+        points.push({ id: crypto.randomUUID(), x, y, color, spread: 1.6, intensity: 0.9 });
         this.#zenSelected = points.length - 1;
         this.handlers.setting('zenPoints', points);
         this.#renderPanel(true);
@@ -342,9 +386,10 @@ export class WorkspaceUi {
   #positionPanel() {
     if (!this.#panel || !this.#anchor) return;
     const panel = el(this.host, '#panel'), rect = this.#anchor.getBoundingClientRect();
-    panel.style.left = `${Math.max(9, Math.min(innerWidth - panel.offsetWidth - 9, rect.left + rect.width / 2 - panel.offsetWidth / 2))}px`;
-    panel.style.top = `${Math.min(innerHeight - 120, Math.max(50, rect.bottom + 8))}px`;
-    panel.style.maxHeight = `${Math.max(180, innerHeight - (rect.bottom + 20))}px`;
+    panel.style.left = `${Math.max(10, Math.min(innerWidth - panel.offsetWidth - 10, rect.left + rect.width / 2 - panel.offsetWidth / 2))}px`;
+    const top = Math.min(innerHeight - 130, Math.max(54, rect.bottom + 10));
+    panel.style.top = `${top}px`;
+    panel.style.maxHeight = `${Math.max(180, innerHeight - top - 14)}px`;
   }
   #renderPanel(force = false) {
     if (!this.#panel) return;
@@ -383,7 +428,7 @@ export class WorkspaceUi {
             ${color('Primary','primary',s)}${color('Secondary','secondary',s)}${color('Accent','accent',s)}
             ${color('Lyric text','textColor',s)}${color('Active word','activeColor',s)}${color('Secondary lyric','inactiveColor',s,'#a6a6b8')}
             ${range('Saturation','saturation',s,0,150)}${range('Brightness','brightness',s,50,140)}
-          ${range('Background darkness','darkness',s,0,100)}${range('Glass opacity','glass',s,15,100)}
+            ${range('Background darkness','darkness',s,0,100)}${range('Glass opacity','glass',s,15,100)}
             ${range('Vignette','vignette',s,0,100)}
             ${range('Glass tint','tint',s,0,100)}${range('Background motion','backgroundMotion',s,0,100)}
             ${range('Grain','grain',s,0,100)}${range('Background blur','blur',s,0,100)}
@@ -535,7 +580,7 @@ export class WorkspaceUi {
     ];
     return `<div class="zen-editor" role="region" aria-label="Zen Gradient Editor">
       <div class="zen-canvas-wrap">
-        <canvas class="zen-canvas" width="280" height="125" title="Drag to position a light" aria-hidden="true"></canvas>
+        <canvas class="zen-canvas" width="302" height="96" title="Drag to position a light" aria-hidden="true"></canvas>
       </div>
       <div class="zen-controls">
         <div class="zen-node-header">
@@ -614,19 +659,27 @@ export class WorkspaceUi {
     if (!ctx) return;
     const w = canvas.width, h = canvas.height;
     ctx.clearRect(0, 0, w, h);
-    ctx.fillStyle = '#0a0d14';
+    ctx.fillStyle = '#090c14';
     ctx.fillRect(0, 0, w, h);
+
+    // Subtle studio rule-of-thirds composition grid
+    ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+    ctx.lineWidth = 1;
+    for (const f of [1 / 3, 2 / 3]) {
+      ctx.beginPath(); ctx.moveTo(Math.round(w * f) + 0.5, 0); ctx.lineTo(Math.round(w * f) + 0.5, h); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, Math.round(h * f) + 0.5); ctx.lineTo(w, Math.round(h * f) + 0.5); ctx.stroke();
+    }
 
     const points = this.data.settings.zenPoints || defaults.zenPoints;
     const colours = [this.data.palette[1],this.data.palette[2],this.data.palette[3],this.data.palette[2]];
     const pointColor = (i: number) => this.data.settings.zenAuto ? colours[i % colours.length] ?? points[i].color : points[i].color;
     points.forEach((pt, i) => {
       const px = pt.x * w, py = pt.y * h;
-      const radius = Math.max(18, pt.spread * 38);
+      const radius = Math.max(20, pt.spread * 40);
       const grad = ctx.createRadialGradient(px, py, 0, px, py, radius);
       grad.addColorStop(0, pointColor(i));
       grad.addColorStop(1, 'transparent');
-      ctx.globalAlpha = Math.min(1, pt.intensity * 0.72);
+      ctx.globalAlpha = Math.min(1, pt.intensity * 0.78);
       ctx.fillStyle = grad;
       ctx.beginPath();
       ctx.arc(px, py, radius, 0, Math.PI * 2);
@@ -639,21 +692,22 @@ export class WorkspaceUi {
       const isSel = i === this.#zenSelected;
       if (isSel) {
         ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 2.5;
+        ctx.lineWidth = 2;
         ctx.beginPath();
         ctx.arc(px, py, 13, 0, Math.PI * 2);
         ctx.stroke();
       }
-      ctx.fillStyle = pointColor(i);
+      const fill = pointColor(i);
+      ctx.fillStyle = fill;
       ctx.beginPath();
       ctx.arc(px, py, 9, 0, Math.PI * 2);
       ctx.fill();
-      ctx.strokeStyle = '#ffffffbb';
+      ctx.strokeStyle = 'rgba(255,255,255,0.85)';
       ctx.lineWidth = 1.5;
       ctx.stroke();
 
-      ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 9px sans-serif';
+      ctx.fillStyle = readableInk(normalizeHex(fill) ?? '#3b5a8c');
+      ctx.font = '600 9px sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(String(i + 1), px, py);
