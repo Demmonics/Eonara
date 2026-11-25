@@ -85,7 +85,7 @@ export class BackgroundScene {
   private readonly uniforms = {
     uSize: { value: new Vector2(1, 1) },
     uTime: { value: 0 }, uIntensity: { value: 0 }, uGrain: { value: 0 }, uVeil: { value: 0 },
-    uBlur: { value: 0 }, uMode: { value: 0 }, uLimit: { value: 0.28 },
+    uBlur: { value: 0 }, uMode: { value: 0 }, uLimit: { value: 0.34 }, uDpr: { value: 1 },
     uSaturation: { value: 1 }, uBrightness: { value: 1 }, uTint: { value: 0.76 },
     uGlass: { value: 0.64 }, uContrast: { value: 0.5 },
     uPrimary: { value: new Color() }, uSecondary: { value: new Color() },
@@ -130,13 +130,14 @@ export class BackgroundScene {
   }
 
   update(width: number, height: number, timeMs: number, palette: DynamicPalette = defaultPalette,
-    settings: BackgroundSettings = defaultBackgroundSettings): void {
+    settings: BackgroundSettings = defaultBackgroundSettings, dpr = 1): void {
     if (this.disposed) return;
     const mode = settings.mode ?? defaultBackgroundSettings.mode;
     const defaults = defaultBackgroundSettings;
     const u = this.uniforms;
     this.frameSettings = settings;
     u.uSize.value.set(dimension(width), dimension(height));
+    u.uDpr.value = Number.isFinite(dpr) ? clamp(dpr, 1, 2.5) : 1;
     u.uMode.value = modeIndex[mode] ?? 0;
     const step = this.lastTimeMs === undefined ? 0 : clamp(timeMs - this.lastTimeMs, 0, 48);
     this.lastTimeMs = timeMs;
@@ -183,7 +184,7 @@ export class BackgroundScene {
       u.uAccent.value.setStyle(palette.accent);
       u.uBackground.value.setStyle(palette.background);
       // Soft luminous ceiling ensuring text contrast without crushing album vibrancy
-      u.uLimit.value = 0.28;
+      u.uLimit.value = 0.34;
     }
     const artwork = isArtMode(mode) ? settings.artworkDataUrl ?? undefined : undefined;
     if (artwork !== this.requestedUrl) this.loadArtwork(artwork);

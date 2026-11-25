@@ -1,9 +1,10 @@
 import { clamp, contrast, hexToLab, labToHex, mixLab, normalizeHex } from './oklab';
 import type { DynamicPalette } from './palette';
 
-function composite(top: string, bottom: string, alpha: number) {
+export function composite(top: string, bottom: string, alpha: number) {
   const read = (color: string, at: number) => Number.parseInt(color.slice(at, at + 2), 16);
-  return '#' + [1, 3, 5].map(at => Math.round(read(top, at) * alpha + read(bottom, at) * (1 - alpha))
+  const a = clamp(Number.isFinite(alpha) ? alpha : 1);
+  return '#' + [1, 3, 5].map(at => Math.round(read(top, at) * a + read(bottom, at) * (1 - a))
     .toString(16).padStart(2, '0')).join('');
 }
 
@@ -39,15 +40,21 @@ export function deriveMaterials(palette: DynamicPalette, tint: number, opacity: 
   // If the requested ink can't clear even an opaque tinted surface, use a darker neutral
   // and a known light ink instead of reporting a contrast guarantee after capping opacity.
   const safeSurface = safeOpacity === null ? '#11131b' : surface;
+  const safeMuted = safeOpacity === null ? '#c9c9d4' : quietText;
+  const cardBackdrop = labToHex(mixLab(hexToLab('#141722'), hexToLab(palette.surface), .45 * t));
+  const overlayOpacity = materialOpacity(safeSurface, palette.foreground, Math.max(.74, opacity), 4.5) ?? 1;
   return {
     atmosphere: labToHex(mixLab(hexToLab(palette.primary), hexToLab(palette.secondary), .52)),
     toolbar: safeSurface,
     popover: labToHex(mixLab(hexToLab(safeSurface), hexToLab(palette.background), .27)),
     gallery: labToHex(mixLab(hexToLab('#090b10'), hexToLab(palette.background), .38)),
+    cardBackdrop,
+    overlaySurface: safeSurface,
+    overlayOpacity,
     border: labToHex(mixLab(hexToLab(palette.accent), hexToLab(palette.mutedForeground), .58)),
     specular: labToHex(mixLab(hexToLab(palette.accent), hexToLab('#ffffff'), .7)),
     shadow: labToHex(mixLab(hexToLab('#000000'), hexToLab(palette.background), .42)),
-    muted: safeOpacity === null ? '#c9c9d4' : quietText,
+    muted: safeMuted,
     opacity: safeOpacity ?? 1,
     accentInk: readableInk(normalizeHex(palette.accent) ?? '#bab7d7'),
   };

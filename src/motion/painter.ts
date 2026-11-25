@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { lensPoint, lensScaleGLSL, type LensField } from './heroGeometry'
+import { cylindricalLensGLSL, cylindricalLensPoint, lensPoint, lensScaleGLSL, type LensField } from './heroGeometry'
 import { clamp } from './timeline'
 import type { Run } from './text'
 
@@ -12,8 +12,12 @@ const quadVertex = `
     vUv = uv;
     vec4 world = modelMatrix * vec4(position, 1.);
     if (uLens.z > 0.) {
-      vec2 p = (world.xy - uLensOrigin) / max(uLens.xy, vec2(1.));
-      world.xy = uLensOrigin + (world.xy - uLensOrigin) * (${lensScaleGLSL});
+      if (uLens.w > .5) {
+        ${cylindricalLensGLSL}
+      } else {
+        vec2 p = (world.xy - uLensOrigin) / max(uLens.xy, vec2(1.));
+        world.xy = uLensOrigin + (world.xy - uLensOrigin) * (${lensScaleGLSL});
+      }
     }
     vScreen = world.xy;
     gl_Position = projectionMatrix * viewMatrix * world;
@@ -25,12 +29,23 @@ const glyphFragment = `
   uniform vec3 uAccent;
   uniform vec2 uMark;
   uniform vec2 uClip;
+  uniform vec2 uTexel;
   uniform float uOpacity;
   uniform float uReveal;
+  uniform float uSoftness;
   varying vec2 vUv;
   varying vec2 vScreen;
   void main() {
     vec4 ink = texture2D(uMap, vUv);
+    if (uSoftness > .01) {
+      vec2 off = uTexel * (uSoftness * 2.2);
+      vec4 blur = ink * .36
+        + texture2D(uMap, clamp(vUv + vec2(off.x, off.y), 0., 1.)) * .16
+        + texture2D(uMap, clamp(vUv + vec2(-off.x, off.y), 0., 1.)) * .16
+        + texture2D(uMap, clamp(vUv + vec2(off.x, -off.y), 0., 1.)) * .16
+        + texture2D(uMap, clamp(vUv + vec2(-off.x, -off.y), 0., 1.)) * .16;
+      ink = mix(ink, blur, clamp(uSoftness, 0., 1.));
+    }
     float selectInk = step(uMark.x, vUv.x)*(1.-step(uMark.y, vUv.x));
     float ch = max(ink.r,max(ink.g,ink.b))-min(ink.r,min(ink.g,ink.b));
     vec3 color = mix(ink.rgb * mix(uInk, uAccent, selectInk), ink.rgb, smoothstep(.06,.24,ch));
@@ -63,7 +78,7 @@ const cardFragment = `
     edge = shape-edge;
     vec3 color = mix(uInk,uAccent,clamp((vUv.y*.62 + (1.-vUv.x)*.20)*uCard.w + edge*.42,0.,1.));
     float alpha = uOpacity * max(shape*uCard.z, edge);
-    alpha *= smoothstep(uClip.x,uClip.x+10.,vScreen.y) * (1.-smoothstep(uClip.y-10.,uClip.y,vScreen.y));
+    alpha *= smoothstep(uClip.x, uClip.x+10., vScreen.y) * (1.-smoothstep(uClip.y-10.,uClip.y,vScreen.y));
     gl_FragColor = vec4(color, alpha);
     #include <colorspace_fragment>
   }`
@@ -97,6 +112,8 @@ export interface Paint {
   opacity?: number
   z?: number
   scale?: number
+  scaleX?: number
+  scaleY?: number
   angle?: number
   clip?: readonly [number, number]
 }
@@ -104,7 +121,9 @@ export interface GlyphPaint extends Paint {
   accent?: THREE.ColorRepresentation
   mark?: readonly [number, number]
   reveal?: number
+  softness?: number
   lens?: LensField
+  lensMode?: 'radial' | 'cylinder'
 }
 export interface CardPaint extends GlyphPaint {
   radius?: number
@@ -133,6 +152,7 @@ export interface InspectedGlyph extends NormalizedBox {
   accentColor: string
   mark: readonly [number, number]
   reveal: number
+  softness: number
   warped: boolean
   inkBox: NormalizedBox
 }
@@ -205,16 +225,17 @@ export class Painter {
 
   private set(mesh: Mesh, x: number, y: number, w: number, h: number, color: THREE.ColorRepresentation, p: GlyphPaint) {
     const u = mesh.material.uniforms, scale = p.scale ?? 1
+    const sx = p.scaleX ?? scale, sy = p.scaleY ?? scale
     mesh.visible = true
     mesh.renderOrder = 100 + this.order++
     mesh.position.set(x, y, p.z ?? 0)
-    mesh.scale.set(w * scale, h * scale, 1)
+    mesh.scale.set(w * sx, h * sy, 1)
     mesh.rotation.z = p.angle ?? 0
     u.uInk.value.set(color)
     if (u.uAccent) u.uAccent.value.set(p.accent ?? color)
     u.uClip.value.set(p.clip?.[0] ?? -100000., p.clip?.[1] ?? 100000.)
     u.uOpacity.value = clamp(p.opacity ?? 1)
-    u.uLens?.value.set(p.lens?.[0] ?? 1, p.lens?.[1] ?? 1, p.lens?.[2] ?? 0, 0)
+    u.uLens?.value.set(p.lens?.[0] ?? 1, p.lens?.[1] ?? 1, p.lens?.[2] ?? 0, p.lensMode === 'cylinder' ? 1 : 0)
     u.uLensOrigin?.value.set(p.lens?.[3] ?? 0, p.lens?.[4] ?? 0)
   }
 
@@ -222,7 +243,14 @@ export class Painter {
     if ((p.opacity ?? 1) <= .002) return
     const i = this.g++
     const mesh = this.glyphs[i] ?? (this.glyphs[i] = this.attach(new THREE.Mesh(this.quad,
-      material(quadVertex, glyphFragment, { ...makeUniforms(), uMap: { value: null }, uMark: { value: new THREE.Vector2() }, uReveal: { value: 1 } }))))
+      material(quadVertex, glyphFragment, {
+        ...makeUniforms(),
+        uMap: { value: null },
+        uMark: { value: new THREE.Vector2() },
+        uReveal: { value: 1 },
+        uSoftness: { value: 0 },
+        uTexel: { value: new THREE.Vector2(1 / 128, 1 / 64) },
+      }))))
     mesh.geometry = p.lens?.[2] ? this.mesh : this.quad
     this.set(mesh, x, y, run.width, run.height, color, p)
     this.glyphRuns[i] = run
@@ -230,6 +258,12 @@ export class Painter {
     u.uMap.value = run.texture
     u.uMark.value.set(p.mark?.[0] ?? 2, p.mark?.[1] ?? 2)
     u.uReveal.value = p.reveal ?? 1
+    const softness = clamp(p.softness ?? 0)
+    u.uSoftness.value = softness
+    if (softness > .01) {
+      const img = run.texture?.image as { width?: number; height?: number } | undefined
+      u.uTexel.value.set(1 / Math.max(1, img?.width || run.width), 1 / Math.max(1, img?.height || run.height))
+    }
   }
 
   card(x: number, y: number, w: number, h: number, color: THREE.ColorRepresentation, p: CardPaint = {}) {
@@ -254,7 +288,7 @@ export class Painter {
         material(strokeVertex, strokeFragment, makeUniforms())))
       mesh.material.side = THREE.DoubleSide
     }
-    this.set(mesh, 0, 0, 1, 1, color, p)
+    this.set(mesh, 0, 0, 1, 1, color, { ...p, z: 0 })
     const count = (points.length - 1) * 6
     let position = mesh.geometry.getAttribute('position') as THREE.BufferAttribute | undefined
     let uv = mesh.geometry.getAttribute('uv') as THREE.BufferAttribute | undefined
@@ -273,9 +307,10 @@ export class Painter {
       for (let j = 1; j < points.length; j++) remaining += Math.hypot(points[j][0] - points[j - 1][0], points[j][1] - points[j - 1][1])
       remaining *= fraction
     }
+    const pz = p.z ?? 0
     let k = 0
     const v = (x: number, y: number, across: number) => {
-      position.setXYZ(k, x, y, 0)
+      position.setXYZ(k, x, y, pz)
       uv.setXY(k++, across, 0)
     }
     for (let j = 1; j < points.length && remaining > 0; j++) {
@@ -303,6 +338,7 @@ export class Painter {
       const lensVec = u.uLens?.value as THREE.Vector4 | undefined
       const lensOrigin = u.uLensOrigin?.value as THREE.Vector2 | undefined
       const warped = !!lensVec && lensVec.z > 0
+      const cylinder = warped && lensVec!.w > .5
       const field: LensField | undefined = warped && lensOrigin
         ? [lensVec.x, lensVec.y, lensVec.z, lensOrigin.x, lensOrigin.y]
         : undefined
@@ -315,7 +351,7 @@ export class Painter {
           const ly = minV + (maxV - minV) * (iy / stepsY)
           pt.set(lx, ly, 0).applyMatrix4(mesh.matrixWorld)
           if (field) {
-            const [wx, wy] = lensPoint(field, pt.x, pt.y)
+            const [wx, wy] = cylinder ? cylindricalLensPoint(field, pt.x, pt.y) : lensPoint(field, pt.x, pt.y)
             pt.x = wx
             pt.y = wy
           }
@@ -360,6 +396,7 @@ export class Painter {
         accentColor: '#' + (u.uAccent.value as THREE.Color).getHexString(),
         mark: [u.uMark.value.x as number, u.uMark.value.y as number],
         reveal: u.uReveal.value as number,
+        softness: u.uSoftness.value as number,
         warped: (u.uLens.value as THREE.Vector4).z > 0,
         inkBox,
       })

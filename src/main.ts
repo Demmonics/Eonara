@@ -14,7 +14,7 @@ import { MotionScene, styles } from './motion';
 import type { LyricLine } from './motion';
 import { lookupLyrics, parseLyrics } from './lyrics';
 import type { LyricsResult } from './lyrics';
-import { BackgroundScene, defaultPalette, manualPalette, PaletteTransition, paletteFromArtwork } from './color';
+import { BackgroundScene, defaultPalette, demoStylePalette, manualPalette, PaletteTransition, paletteFromArtwork } from './color';
 import type { DynamicPalette } from './color';
 import { deriveMaterials, readableInk } from './color/materials';
 import { normalizePoints, parseBlend, parseRotation } from './color/gradientState';
@@ -69,6 +69,7 @@ let fixtureDurationMs: number | undefined;
 let fixtureReducedOverride: boolean | undefined = fixtureMode && searchParams.get('reduced') === '1' ? true : undefined;
 let fixtureOverlayOverride: boolean | undefined;
 let fixtureBgTimeMs: number | undefined;
+let fixturePalettePinned = false;
 let stage!: HTMLElement;
 let ui: WorkspaceUi | undefined;
 let renderer: WebGLRenderer | undefined;
@@ -139,12 +140,15 @@ function seek(ms: number) {
 function previewStyle(id: string) {
   if (styles.some(x => x.id === id) && preview !== id) {
     preview = id; galleryDirty = true;
+    if (demo && settings.matchArt && !settings.paletteLocked && !overlay && !fixturePalettePinned) pickPalette();
     if (!reduced.matches && !overlay && !fixtureMode) stage.animate([{opacity: .7, transform: 'scale(1.012)'}, {opacity: 1, transform: 'none'}], {duration: 240, easing: 'cubic-bezier(.22,.65,.23,1)'});
   }
 }
 function markGallery() { galleryDirty = true; galleryAt = -Infinity; requestGallery(); invalidate(); }
 function pickPalette(target = settings.paletteLocked && locked ? locked :
-  settings.matchArt && settings.mode !== 'manual' ? automaticPalette : manualPalette(settings.primary, settings.secondary, settings.accent)) {
+  settings.matchArt && settings.mode !== 'manual'
+    ? (!overlay && demo && !fixturePalettePinned ? demoStylePalette(preview) : automaticPalette)
+    : manualPalette(settings.primary, settings.secondary, settings.accent)) {
   selectedPalette = target;
   const duration = fixtureMode || reduced.matches ? 0 : settings.transition;
   transition.setTarget(target, performance.now(), duration);
@@ -281,8 +285,8 @@ async function action(name: string, value?: string) {
     case 'pause': demoPosition = demoAt(); demoAnchor = performance.now(); paused = !paused; tone.silence(); break;
     case 'restart': seek(0); break;
     case 'sound': await tone.toggle().catch(ex => notify(String(ex))); break;
-    case 'demo': if (!demo) { demo = true; demoPosition = 0; demoAnchor = performance.now(); } break;
-    case 'live': demoPosition = demoAt(); demo = false; tone.silence(); break;
+    case 'demo': if (!demo) { demo = true; demoPosition = 0; demoAnchor = performance.now(); pickPalette(); } break;
+    case 'live': demoPosition = demoAt(); demo = false; tone.silence(); pickPalette(); break;
     case 'refresh': if (!isTauri()) notify('Live media detection is available in the Windows build.'); else { await native('media_refresh'); await refresh(); } return;
     case 'retry-lyrics': await refreshLyrics(true); return;
     case 'reset-size': ui?.resetSize(); return;
@@ -346,7 +350,7 @@ async function importFile(file: File, target: 'font'|'lyrics') {
         abort?.abort(); loading = false;
       } else if (importGeneration === generation) { standaloneImport = result; seek(0); }
       else { notify('The session changed while opening the file. Import again for the new recording.'); return; }
-      demo = false; updateUi(); invalidate();
+      demo = false; pickPalette(); updateUi(); invalidate();
       notify(key ? 'Local lyrics attached to this recording.' : 'Lyrics opened in local rehearsal.');
     }
   } catch (ex) { notify(ex instanceof Error ? ex.message : String(ex)); }
@@ -489,7 +493,7 @@ function renderFrame(now: number, force = false) {
   renderer.clear();
   if (!effectiveOverlay) {
     const bgTime = fixtureMode ? (fixtureBgTimeMs ?? 1200 + position * 0.5) : now;
-    background.update(w,h,bgTime,palette,s);
+    background.update(w, h, bgTime, palette, s, renderer.getPixelRatio());
     renderer.render(background.scene, background.camera);
     renderer.clearDepth();
   }
@@ -527,13 +531,15 @@ function requestGallery(now = performance.now()) {
         thumbRenderer.setSize(180,88,false); thumbScene = new MotionScene();
       }
       const tile = visible[galleryIndex++ % visible.length];
+      const tileId = tile.dataset.style!;
+      const tilePalette = demo && settings.matchArt && !settings.paletteLocked ? demoStylePalette(tileId) : palette;
       const c = tile.querySelector('canvas')!, ctx = c.getContext('2d')!;
-      const opts = motionOptions(palette,180,88);
-      thumbScene!.sample(tile.dataset.style!,demoLines,Math.max(250, demoAt()),opts);
+      const opts = motionOptions(tilePalette,180,88);
+      thumbScene!.sample(tileId,demoLines,Math.max(250, demoAt()),opts);
       thumbRenderer.setClearColor(0x20263a, 0); thumbRenderer.render(thumbScene!.scene,thumbScene!.camera);
-      ctx.fillStyle = palette.background; ctx.fillRect(0,0,180,88);
+      ctx.fillStyle = tilePalette.background; ctx.fillRect(0,0,180,88);
       const light = ctx.createRadialGradient(119,10,0,110,40,154);
-      light.addColorStop(0,palette.primary); light.addColorStop(1,'#00000000');
+      light.addColorStop(0,tilePalette.primary); light.addColorStop(1,'#00000000');
       ctx.fillStyle = light; ctx.fillRect(0,0,180,88);
       ctx.drawImage(thumbRenderer.domElement,0,0);
       galleryAt = performance.now();
@@ -616,7 +622,11 @@ if (fixtureMode) {
   }
   const applyPatch = (patch?: FixturePatch) => {
     if (!patch) return;
-    if (patch.styleId && styles.some(s => s.id === patch.styleId)) preview = patch.styleId;
+    let styleChanged = false;
+    if (patch.styleId && styles.some(s => s.id === patch.styleId)) {
+      if (preview !== patch.styleId) styleChanged = true;
+      preview = patch.styleId;
+    }
     if (patch.fixtureId) {
       fixtureSpec = getFixtureSpec(patch.fixtureId);
       fixtureCustomLines = undefined;
@@ -639,10 +649,19 @@ if (fixtureMode) {
     if (patch.darkness !== undefined) nextSettings.darkness = patch.darkness;
     if (patch.weight !== undefined) nextSettings.weight = patch.weight;
     if (patch.font !== undefined) { nextSettings.font = patch.font; currentFont = ''; void ensureFont(patch.font); }
-    if (patch.matchArt !== undefined) nextSettings.matchArt = patch.matchArt;
+    if (patch.matchArt !== undefined) {
+      nextSettings.matchArt = patch.matchArt;
+      if (!patch.matchArt) fixturePalettePinned = true;
+    }
     settings = nextSettings;
     if (patch.palette) {
+      fixturePalettePinned = true;
       const target = manualPalette(patch.palette.primary, patch.palette.secondary, patch.palette.accent);
+      selectedPalette = target;
+      palette = target;
+      transition.setTarget(target, 0, 0);
+    } else if (styleChanged && !fixturePalettePinned && nextSettings.matchArt && nextSettings.mode !== 'manual' && !nextSettings.paletteLocked) {
+      const target = demoStylePalette(preview);
       selectedPalette = target;
       palette = target;
       transition.setTarget(target, 0, 0);

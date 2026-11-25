@@ -1,8 +1,8 @@
 import type { ColorRepresentation } from 'three'
 import { Painter, type GlyphPaint, type Paint, type Point } from './painter'
-import { TextAtlas, face, type Face, type Row, type Run } from './text'
+import { TextAtlas, face, mono, systemUiFont, type Face, type Row, type Run } from './text'
 import { activeToken, clamp, mix, settle, tokenIndex, type Cue, type Token } from './timeline'
-import type { MotionOptions } from './types'
+import { normalizeStyleId, sceneTypography, type MotionOptions, type SceneTypography, type StyleId } from './types'
 
 export function multiplier(value: number, min: number, max: number) {
   const v = Number.isFinite(value) ? value : 1
@@ -17,6 +17,8 @@ export class Frame {
   readonly scale: number
   readonly intensity: number
   readonly speed: number
+  readonly style: StyleId
+  readonly typography: SceneTypography
   readonly regular: Face
   readonly medium: Face
   readonly heavy: Face
@@ -36,20 +38,40 @@ export class Frame {
     readonly p: Painter, readonly atlas: TextAtlas,
     readonly options: MotionOptions, readonly cues: readonly Cue[],
     readonly cue: Cue, readonly time: number,
+    styleId: string = 'ship',
   ) {
     this.w = options.width
     this.h = options.height
     this.overlay = options.overlay === true
     this.low = options.lowDetail === true
+    this.style = normalizeStyleId(styleId)
+    this.typography = sceneTypography[this.style]
     this.unit = clamp(Math.min(this.w / 1110, this.h / 680), .38, 1.5)
     this.y = this.overlay ? 0 : this.h * .066
     this.scale = multiplier(options.size, .5, 2)
     this.intensity = multiplier(options.intensity, 0, 2)
     this.speed = multiplier(options.speed, .25, 3)
-    const weight = options.fontWeight ?? options.weight ?? 690
-    this.regular = face(options.font, clamp(weight - 100, 300, 900))
-    this.medium = face(options.font, clamp(weight, 300, 900))
-    this.heavy = face(options.font, clamp(weight + 100, 350, 900))
+
+    const userWeight = options.fontWeight ?? options.weight
+    const baseWeight = userWeight ?? this.typography.normalWeight
+    const weightOffset = userWeight !== undefined ? userWeight - 600 : 0
+    const customFont = options.font?.trim()
+    const useUserFont = !!customFont && (
+      this.typography.fontRole === 'kinetic'
+      || customFont.startsWith('LyricMotion Imported ')
+      || (customFont !== 'Inter Variable' && customFont !== 'Segoe UI Variable')
+    )
+    const family = useUserFont
+      ? customFont!
+      : this.typography.fontRole === 'mono'
+        ? mono.css
+        : this.typography.fontRole === 'system'
+          ? systemUiFont
+          : customFont || 'Inter Variable'
+
+    this.regular = face(family, clamp((userWeight !== undefined ? baseWeight - 100 : this.typography.historyWeight + weightOffset), 300, 900))
+    this.medium = face(family, clamp((userWeight !== undefined ? baseWeight : this.typography.normalWeight + weightOffset), 300, 900))
+    this.heavy = face(family, clamp((userWeight !== undefined ? baseWeight + 100 : this.typography.displayWeight + weightOffset), 350, 900))
     this.token = activeToken(cue, time)
     this.ti = tokenIndex(cue, time)
     this.dpr = clamp(options.pixelRatio ?? 1.5, 1, 2.5)
@@ -78,13 +100,13 @@ export class Frame {
     return Math.max(1, nominal * Math.min(1, width / Math.max(1, raw)))
   }
 
-  run(text: string, nominal: number, f = this.medium, width = this.lane) {
-    return this.atlas.get(text, this.fit(text, nominal, f, width), f, this.dpr)
+  run(text: string, nominal: number, f = this.medium, width = this.lane, outline = this.overlay) {
+    return this.atlas.get(text, this.fit(text, nominal, f, width), f, this.dpr, outline)
   }
 
   word(text: string, x: number, y: number, nominal: number, color: ColorRepresentation,
-    p: GlyphPaint = {}, f = this.medium, width = this.lane) {
-    const run = this.run(text, nominal, f, width)
+    p: GlyphPaint = {}, f = this.medium, width = this.lane, outline = this.overlay) {
+    const run = this.run(text, nominal, f, width, outline)
     this.p.glyph(run, x, y, color, p)
     return run
   }
@@ -106,8 +128,8 @@ export class Frame {
       : [(run.padding + a - 1) / run.width, (run.padding + b + 1) / run.width]
   }
 
-  rows(cue: Cue, nominal: number, width: number, f = this.medium) {
-    return this.atlas.rows(cue.text, nominal, f, width)
+  rows(cue: Cue, nominal: number, width: number, f = this.medium, variant = this.style) {
+    return this.atlas.rows(cue.text, nominal, f, width, variant)
   }
 
   page(cue: Cue, rows: readonly Row[], limit: number) {

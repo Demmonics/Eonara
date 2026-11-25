@@ -9,10 +9,3 @@ __pycache__/
 *.pyc
 .env
 .env.*
-
-# Local visual research. Keep captured/derived media and vendor downloads out of Git.
-/research/verci/recordings/
-/research/verci/frames/
-/research/verci/contact-sheets/
-/research/verci/measurements/vendor-index.html
-/research/lyricmotion/comparisons/media/

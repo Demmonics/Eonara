@@ -1,4 +1,5 @@
-import { clamp, mix, smooth, type Cue, type Token } from './timeline'
+import { evalChannel, lexicalGroups, type ChannelSegment } from './choreography'
+import { clamp, cueWindow, mix, smooth, type Cue, type Token } from './timeline'
 
 export interface ShipWord {
   text: string
@@ -8,32 +9,55 @@ export interface ShipWord {
 
 /** Keep punctuation and any unaligned affixes in the shaped run they touch. */
 export function shipWords(cue: Cue): ShipWord[] {
-  const words: ShipWord[] = []
-  let end = 0
-  function add(from: number, to: number, token?: Token) {
-    const last = words.at(-1)
-    const spaced = from > end
-    const text = cue.text.slice(from, to)
-    if (last && !spaced && (!last.token || !token)) {
-      last.text += text
-      last.token ??= token
-    } else {
-      words.push({ text, token, spaced })
+  return lexicalGroups(cue).map(({ text, token, spaced }) => ({ text, token, spaced }))
+}
+
+export function contiguousCueRun(
+  cues: readonly Cue[],
+  cueIndex: number,
+  timeMs: number,
+  eligible: (cue: Cue) => boolean,
+  maxCues = 3,
+  maxAgeMs = 4500,
+  maxGapMs = 1600,
+): Cue[] {
+  const windowed = cueWindow(cues, cueIndex, timeMs, maxCues, maxAgeMs)
+  const out: Cue[] = []
+  for (let i = windowed.length - 1; i >= 0; i--) {
+    const c = windowed[i]
+    if (!eligible(c)) break
+    if (out.length > 0) {
+      const next = out[0]
+      if (next.startMs - c.endMs > maxGapMs) break
     }
-    end = to
+    out.unshift(c)
   }
-  function unaligned(to: number) {
-    const from = end
-    for (const match of cue.text.slice(from, to).matchAll(/\S+/gu)) {
-      add(from + match.index, from + match.index + match[0].length)
+  return out
+}
+
+export function assignWordReveals(cue: Cue, words: readonly { token?: Token }[]): number[] {
+  const times = new Array<number>(words.length)
+  for (let i = 0; i < words.length; i++) {
+    if (words[i].token) times[i] = words[i].token!.startMs
+  }
+  let prevTimed = -1
+  for (let i = 0; i <= words.length; i++) {
+    if (i === words.length || times[i] !== undefined) {
+      if (i - prevTimed > 1) {
+        const startT = prevTimed >= 0 ? times[prevTimed] : cue.startMs
+        const endT = i < words.length ? times[i] : cue.endMs
+        const span = i - prevTimed
+        for (let k = prevTimed + 1; k < i; k++) {
+          times[k] = mix(startT, endT, (k - prevTimed) / span)
+        }
+      }
+      prevTimed = i
     }
   }
-  for (const token of cue.tokens) {
-    unaligned(token.from)
-    add(token.from, token.to, token)
+  for (let i = 1; i < times.length; i++) {
+    if (times[i] < times[i - 1]) times[i] = times[i - 1]
   }
-  unaligned(cue.text.length)
-  return words
+  return times
 }
 
 export interface MeasuredWord extends ShipWord {
@@ -88,8 +112,6 @@ export function packShip(words: readonly MeasuredWord[], measure: number, step: 
       const fraction = slab.length === 1 ? .5 : flip ? 1 - register[i % 4] : register[i % 4]
       return (slabWidth - row.width) * fraction
     })
-    // A nearly full row can nullify the nominal stagger. Give the most
-    // open row the opposite edge if this whole page would read flush-left.
     if (slab.length > 1 && Math.max(...margins) - Math.min(...margins) < step * .28) {
       const open = slab.reduce((best, row, i) => row.width < slab[best].width ? i : best, 0)
       const room = slabWidth - slab[open].width
@@ -109,6 +131,95 @@ export function packShip(words: readonly MeasuredWord[], measure: number, step: 
     pages.push({ words: placed, first: placed.find(word => word.token)?.token })
   }
   return pages
+}
+
+export interface ShipWallInput {
+  id: string
+  cueIndex: number
+  wordIndex: number
+  text: string
+  token?: Token
+  revealMs: number
+  width: number
+  size: number
+  display: boolean
+  accented: boolean
+}
+
+export interface ShipWallNode extends ShipWallInput {
+  x: number
+  y: number
+}
+
+const WALL_STAGGER = [.14, -.28, .22, -.16, .27, -.21, .08, -.25]
+
+/**
+ * Place lexical words onto a staggered vertical word-wall with guaranteed
+ * baseline clearance, asymmetric horizontal anchors, and bounded coordinates.
+ */
+export function layoutShipWall(
+  items: readonly ShipWallInput[],
+  measure: number,
+  step: number,
+  flip: boolean,
+  staggerSpread = .72,
+): ShipWallNode[] {
+  if (!items.length) return []
+  const nodes: ShipWallNode[] = []
+  let cursorY = 0
+  const maxHalf = measure * .47
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i]
+    if (i > 0) {
+      const prev = items[i - 1]
+      const minClear = (prev.size * .58 + item.size * .58) * 1.12
+      cursorY -= Math.max(step * .92, minClear)
+    }
+    const baseLane = WALL_STAGGER[i % WALL_STAGGER.length] * (flip ? -1 : 1)
+    const rawX = baseLane * measure * staggerSpread
+    const limit = Math.max(0, maxHalf - item.width * .56)
+    let x = clamp(rawX, -limit, limit)
+    if (i > 0 && limit > step * .35 && Math.abs(x - nodes[i - 1].x) < step * .32) {
+      const nudge = nodes[i - 1].x >= 0 ? -limit * staggerSpread : limit * staggerSpread
+      x = clamp(nudge, -limit, limit)
+    }
+    nodes.push({ ...item, x, y: cursorY })
+  }
+  return nodes
+}
+
+/**
+ * Evaluate the continuous upward wall rail over revealed words using
+ * velocity-matched channel segments so rapid cues never snap or reverse.
+ */
+export function evalShipRail(
+  nodes: readonly ShipWallNode[],
+  timeMs: number,
+  speed: number,
+  quiet: boolean,
+  anchorY: number,
+): number {
+  if (!nodes.length) return anchorY
+  let active = 0
+  for (let i = 0; i < nodes.length; i++) {
+    if (nodes[i].revealMs <= timeMs) active = i
+    else break
+  }
+  const targetFor = (idx: number) => {
+    const focusRatio = idx === 0 ? .12 : idx === 1 ? -.34 : -.52
+    const baseShift = nodes[idx].size * focusRatio
+    return anchorY - nodes[idx].y + baseShift
+  }
+  if (quiet) return targetFor(active)
+  const segments: ChannelSegment[] = []
+  for (let i = 1; i <= active; i++) {
+    const prevT = nodes[i - 1].revealMs
+    const startMs = nodes[i].revealMs
+    const gap = Math.max(60, startMs - prevT)
+    const durationMs = clamp(Math.min(340 / speed, gap * .85), 140 / speed, 360 / speed)
+    segments.push({ startMs, durationMs, target: targetFor(i), ease: 'smooth' })
+  }
+  return evalChannel(targetFor(0), segments, timeMs).value
 }
 
 export interface ShipFocus { x: number; y: number }
@@ -145,6 +256,7 @@ const EDGE = .76
 const CORE = 1.12
 const CURVATURE = 1.35
 const number = (n: number) => n.toFixed(2)
+const num3 = (n: number) => n.toFixed(3)
 export const lensScaleGLSL = `1. + uLens.z * (${number(CORE)} * inversesqrt(1. + ${number(CURVATURE)} * dot(p,p)) - ${number(EDGE)})`
 
 export function lensPoint(field: LensField, x: number, y: number): readonly [number, number] {
@@ -154,9 +266,43 @@ export function lensPoint(field: LensField, x: number, y: number): readonly [num
   return [ox + (x - ox) * k, oy + (y - oy) * k]
 }
 
+// Bounded cylindrical projection giving stronger vertical compression and subtle baseline curvature off-center.
+const CYL_K = .74
+const CYL_L = .44
+const CYL_A = .24
+const CYL_B = .016
+
+export const cylindricalLensGLSL = `
+  vec2 cp = (world.xy - uLensOrigin) / max(uLens.xy, vec2(1.));
+  float cv = clamp(cp.y, -1.28, 1.28);
+  float cvExt = (cp.y - cv) * .32;
+  float cu2 = (cp.x * cp.x) / (1. + .22 * cp.x * cp.x);
+  float cDen = 1. + ${num3(CYL_L)} * (1. - cos(${num3(CYL_K)} * cv));
+  float cSv = max(.34, 1. - ${num3(CYL_A)} * cv * cv);
+  vec2 cw = vec2(
+    cp.x * cSv / cDen,
+    sin(${num3(CYL_K)} * cv) / (${num3(CYL_K)} * cDen) + ${num3(CYL_B)} * cu2 * cv + cvExt
+  );
+  world.xy = uLensOrigin + mix(cp, cw, uLens.z) * uLens.xy;
+`
+
+export function cylindricalLensPoint(field: LensField, x: number, y: number): readonly [number, number] {
+  const [rx, ry, strength, ox, oy] = field
+  if (strength <= 0) return [x, y]
+  const sx = Math.max(1, rx), sy = Math.max(1, ry)
+  const u = (x - ox) / sx
+  const v = (y - oy) / sy
+  const cv = clamp(v, -1.28, 1.28)
+  const cvExt = (v - cv) * .32
+  const cu2 = (u * u) / (1 + .22 * u * u)
+  const denom = 1 + CYL_L * (1 - Math.cos(CYL_K * cv))
+  const sv = Math.max(.34, 1 - CYL_A * cv * cv)
+  const wx = (u * sv) / denom
+  const wy = Math.sin(CYL_K * cv) / (CYL_K * denom) + CYL_B * cu2 * cv + cvExt
+  return [ox + mix(u, wx, strength) * sx, oy + mix(v, wy, strength) * sy]
+}
+
 function rollTo(time: number, onset: number, before: number, after: number, speed: number) {
-  // A short optical lead moves *inactive* type only. Both halves share zero
-  // slope at the junction, and adjacent transition windows cannot overlap.
   const lead = Math.min(62 / speed, (onset - before) * .43)
   const tail = Math.min(122 / speed, (after > onset ? after - onset : Infinity) * .53)
   return time < onset

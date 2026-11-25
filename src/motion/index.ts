@@ -79,7 +79,7 @@ export class MotionScene {
         this.camera.far = Math.max(5000, this.camera.position.z * 3)
         this.camera.updateProjectionMatrix()
       }
-      const f = new Frame(this.p, this.atlas, options, this.cues, cue, timeMs)
+      const f = new Frame(this.p, this.atlas, options, this.cues, cue, timeMs, styleId)
       switch (styleId) {
         case 'fisheye': lens(f); break
         case 'visual': visual(f); break

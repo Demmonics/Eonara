@@ -11,11 +11,14 @@ export function upperBound<T extends LyricWord>(items: readonly T[], t: number):
 }
 
 export interface Token extends LyricWord {
+  id: string
+  tokenIndex: number
   from: number
   to: number
 }
 
 export interface Cue extends LyricLine {
+  id: string
   index: number
   tokens: readonly Token[]
   timed: boolean
@@ -37,7 +40,7 @@ export function breakPoints(text: string): number[] {
   return Array.from(lineBreaks.segment(text), ({ index, segment }) => index + segment.length)
 }
 
-function alignTokens(line: LyricLine): Token[] {
+function alignTokens(line: LyricLine, cueIndex: number): Token[] {
   const tokens: Token[] = []
   let cursor = 0
   const boundaries = new Set(Array.from(graphemes.segment(line.text), ({ index }) => index))
@@ -53,7 +56,16 @@ function alignTokens(line: LyricLine): Token[] {
     if (from < 0 && lower.length === line.text.length) from = lower.indexOf(text.toLowerCase(), cursor)
     const to = from + text.length
     if (from < 0 || !boundaries.has(from) || !boundaries.has(to)) continue
-    tokens.push({ startMs, endMs, text: line.text.slice(from, to), from, to })
+    const tokenIndex = tokens.length
+    tokens.push({
+      id: `c${cueIndex}:t${tokenIndex}`,
+      tokenIndex,
+      startMs,
+      endMs,
+      text: line.text.slice(from, to),
+      from,
+      to,
+    })
     cursor = to
   }
   return tokens
@@ -66,12 +78,20 @@ export function buildTimeline(lines: readonly LyricLine[]): Cue[] {
     .slice()
     .sort((a, b) => a.startMs - b.startMs)
     .map((line, index) => {
-      const words = alignTokens(line)
+      const words = alignTokens(line, index)
       const rtl = rtlScript.test(line.text), mixed = rtl && strongLtr.test(line.text)
       prefixEnd = Math.max(prefixEnd, line.endMs)
       return {
-        ...line, index, prefixEnd, rtl, mixed, timed: words.length > 0,
-        tokens: words.length > 0 ? words : [{ ...line, from: 0, to: line.text.length }],
+        ...line,
+        id: `c${index}`,
+        index,
+        prefixEnd,
+        rtl,
+        mixed,
+        timed: words.length > 0,
+        tokens: words.length > 0
+          ? words
+          : [{ ...line, id: `c${index}:t0`, tokenIndex: 0, from: 0, to: line.text.length }],
       }
     })
 }
@@ -81,6 +101,17 @@ export function findCue(cues: readonly Cue[], t: number): Cue | undefined {
     if (t < cues[i].endMs) return cues[i]
   }
   return undefined
+}
+
+/** Return cues within a deterministic history window ending at `cueIndex` inside `maxAgeMs`. */
+export function cueWindow(cues: readonly Cue[], cueIndex: number, timeMs: number, maxCues = 5, maxAgeMs = 12_000): Cue[] {
+  const out: Cue[] = []
+  for (let i = Math.max(0, cueIndex - maxCues + 1); i <= cueIndex; i++) {
+    const c = cues[i]
+    if (!c) continue
+    if (i === cueIndex || timeMs - c.endMs <= maxAgeMs) out.push(c)
+  }
+  return out
 }
 
 export function tokenIndex(cue: Cue, t: number): number {
@@ -96,6 +127,7 @@ export function activeToken(cue: Cue, t: number): Token | undefined {
 export const clamp = (n: number, l = 0, h = 1) => Math.min(h, Math.max(l, n))
 export const mix = (a: number, b: number, t: number) => a + (b - a) * t
 export const smooth = (t: number) => { const x = clamp(t); return x * x * (3 - 2 * x) }
+export const smoother = (t: number) => { const x = clamp(t); return x * x * x * (x * (x * 6 - 15) + 10) }
 export const settle = (t: number) => { const x = clamp(t); return 1 - (1 - x) ** 3 }
 export const spring = (t: number) => { const x = clamp(t); return 1 - (1 - x) ** 3 * Math.cos(x * 5.2) }
 

@@ -26,6 +26,7 @@ export interface Row {
 }
 
 export const mono: Face = { css: '"Cascadia Mono", Consolas, monospace', weight: 550 }
+export const systemUiFont = '"Segoe UI Variable", "Inter Variable", "Segoe UI", sans-serif'
 
 export function face(font: string, weight = 650): Face {
   const name = font?.trim() || 'Segoe UI Variable'
@@ -72,7 +73,7 @@ export class TextAtlas {
   }
 
   width(text: string, size: number, f: Face) {
-    const font = fontKey(f, quantize(size)), key = font + '\0' + text
+    const font = fontKey(f, quantize(size)), key = `${this.fontEpoch}\0${font}\0${text}`
     const cached = this.metrics.get(key)
     if (cached !== undefined) return cached
     const ctx = this.context()
@@ -87,8 +88,9 @@ export class TextAtlas {
     return result
   }
 
-  rows(text: string, size: number, f: Face, width: number): Row[] {
-    const key = fontKey(f, quantize(size)) + '\0' + Math.round(width) + '\0' + text
+  rows(text: string, size: number, f: Face, width: number, variant = ''): Row[] {
+    const dir = rtlScript.test(text) ? 'rtl' : 'ltr'
+    const key = `${this.fontEpoch}\0${dir}\0${variant}\0${fontKey(f, quantize(size))}\0${Math.round(width)}\0${text}`
     const cached = this.layouts.get(key)
     if (cached) return cached
     const result: Row[] = []
@@ -120,14 +122,14 @@ export class TextAtlas {
       last = end
     }
     if (from < text.length) add(from, text.length)
-    if (this.layouts.size >= 180) this.layouts.clear()
+    if (this.layouts.size >= 240) this.layouts.clear()
     this.layouts.set(key, result)
     return result
   }
 
-  get(text: string, nominal: number, f: Face, dpr: number): Run {
+  get(text: string, nominal: number, f: Face, dpr: number, outline = false): Run {
     const size = quantize(nominal), scale = Math.max(1, Math.min(3, Math.ceil(dpr * 1.15)))
-    const font = fontKey(f, size), key = `${this.fontEpoch}/${scale}/${font}\0${text}`
+    const font = fontKey(f, size), key = `${this.fontEpoch}/${scale}/${outline ? 1 : 0}/${font}\0${text}`
     let run = this.runs.get(key)
     if (run) {
       this.runs.delete(key)
@@ -160,10 +162,12 @@ export class TextAtlas {
     ctx.font = font
     ctx.textAlign = 'left'
     ctx.direction = rtl ? 'rtl' : 'ltr'
-    ctx.lineJoin = 'round'
-    ctx.strokeStyle = 'rgba(12,12,17,.74)'
-    ctx.lineWidth = Math.min(2.6, Math.max(1.2, size * .029))
-    ctx.strokeText(text, padding, asc + 4)
+    if (outline) {
+      ctx.lineJoin = 'round'
+      ctx.strokeStyle = 'rgba(12,12,17,.74)'
+      ctx.lineWidth = Math.min(2.6, Math.max(1.2, size * .029))
+      ctx.strokeText(text, padding, asc + 4)
+    }
     ctx.fillStyle = '#fff'
     ctx.fillText(text, padding, asc + 4)
     const texture = new CanvasTexture(canvas)
