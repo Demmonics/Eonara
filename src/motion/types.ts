@@ -24,7 +24,9 @@ export interface MotionOptions {
   reducedMotion: boolean
   /** True on the desktop overlay: drops nonessential scene decoration. */
   overlay?: boolean
+  /** Global weight dial. 600 is neutral; scene-specific role weights remain distinct. */
   weight?: number
+  /** Absolute normal weight for a controlled scene/font comparison. */
   fontWeight?: number
   pixelRatio?: number
   lowDetail?: boolean
@@ -79,16 +81,16 @@ const kineticDefault: SceneTypography = {
 }
 
 export const sceneTypography: Record<StyleId, SceneTypography> = {
-  ship: { ...kineticDefault, normalWeight: 560, displayWeight: 680, historyWeight: 500, lineHeightRatio: 1.14, maxInkWidth: .84, wrapPolicy: 'word-wall', opticalMarginEm: .05, contrastRole: 'accent-plate' },
-  fisheye: { ...kineticDefault, normalWeight: 560, displayWeight: 660, historyWeight: 480, lineHeightRatio: 1.24, maxInkWidth: .75, wrapPolicy: 'column', opticalMarginEm: .03, contrastRole: 'high-contrast' },
+  ship: { ...kineticDefault, normalWeight: 510, displayWeight: 590, historyWeight: 470, lineHeightRatio: 1.14, maxInkWidth: .84, wrapPolicy: 'word-wall', opticalMarginEm: .05, contrastRole: 'accent-plate' },
+  fisheye: { ...kineticDefault, normalWeight: 500, displayWeight: 560, historyWeight: 460, lineHeightRatio: 1.24, maxInkWidth: .75, wrapPolicy: 'column', opticalMarginEm: .03, contrastRole: 'high-contrast' },
   visual: { ...kineticDefault, normalWeight: 530, displayWeight: 640, historyWeight: 460, lineHeightRatio: 1.18, maxInkWidth: .76, wrapPolicy: 'column', opticalMarginEm: .04, contrastRole: 'editorial' },
-  'fisheye-visual': { ...kineticDefault, normalWeight: 560, displayWeight: 660, historyWeight: 480, lineHeightRatio: 1.24, maxInkWidth: .76, wrapPolicy: 'column', opticalMarginEm: .03, contrastRole: 'high-contrast' },
+  'fisheye-visual': { ...kineticDefault, normalWeight: 500, displayWeight: 560, historyWeight: 460, lineHeightRatio: 1.24, maxInkWidth: .76, wrapPolicy: 'column', opticalMarginEm: .03, contrastRole: 'high-contrast' },
   codestyle: { fontRole: 'mono', normalWeight: 520, displayWeight: 560, historyWeight: 450, lineHeightRatio: 1.36, maxInkWidth: .78, wrapPolicy: 'row', opticalMarginEm: 0, contrastRole: 'high-contrast' },
   'codestyle-visual': { fontRole: 'mono', normalWeight: 520, displayWeight: 560, historyWeight: 450, lineHeightRatio: 1.36, maxInkWidth: .78, wrapPolicy: 'row', opticalMarginEm: 0, contrastRole: 'high-contrast' },
   branches: { ...kineticDefault, normalWeight: 540, displayWeight: 650, historyWeight: 460, lineHeightRatio: 1.15, maxInkWidth: .90, wrapPolicy: 'compact', opticalMarginEm: .02, contrastRole: 'editorial' },
   web: { ...kineticDefault, normalWeight: 540, displayWeight: 660, historyWeight: 460, lineHeightRatio: 1.15, maxInkWidth: .86, wrapPolicy: 'compact', opticalMarginEm: .02, contrastRole: 'card' },
   constellation: { ...kineticDefault, normalWeight: 520, displayWeight: 640, historyWeight: 450, lineHeightRatio: 1.15, maxInkWidth: .88, wrapPolicy: 'compact', opticalMarginEm: .02, contrastRole: 'editorial' },
-  'message-thread': { fontRole: 'system', normalWeight: 520, displayWeight: 600, historyWeight: 480, lineHeightRatio: 1.22, maxInkWidth: .70, wrapPolicy: 'row', opticalMarginEm: 0, contrastRole: 'card' },
+  'message-thread': { fontRole: 'system', normalWeight: 420, displayWeight: 510, historyWeight: 400, lineHeightRatio: 1.22, maxInkWidth: .70, wrapPolicy: 'row', opticalMarginEm: 0, contrastRole: 'card' },
   payments: { fontRole: 'system', normalWeight: 520, displayWeight: 610, historyWeight: 470, lineHeightRatio: 1.20, maxInkWidth: .88, wrapPolicy: 'row', opticalMarginEm: 0, contrastRole: 'card' },
   'map-journey': { ...kineticDefault, normalWeight: 540, displayWeight: 640, historyWeight: 470, lineHeightRatio: 1.14, maxInkWidth: .84, wrapPolicy: 'row', opticalMarginEm: .02, contrastRole: 'card' },
   notifications: { fontRole: 'system', normalWeight: 520, displayWeight: 620, historyWeight: 460, lineHeightRatio: 1.14, maxInkWidth: .88, wrapPolicy: 'row', opticalMarginEm: 0, contrastRole: 'card' },

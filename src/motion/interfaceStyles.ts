@@ -3,14 +3,19 @@ import { mono } from './text'
 import { clamp, mix, settle, smooth, type Cue } from './timeline'
 import type { GlyphPaint } from './painter'
 
+const speakerSides = new WeakMap<readonly Cue[], readonly boolean[]>()
 function speakerSide(cues: readonly Cue[], index: number): boolean {
+  const cached = speakerSides.get(cues)
+  if (cached) return cached[index] ?? false
+  const sides: boolean[] = []
   let outgoing = false
   let turnIndex = 0
   let runLen = 0
-  for (let i = 0; i <= index; i++) {
+  for (let i = 0; i < cues.length; i++) {
     if (i === 0) {
       outgoing = false
       runLen = 1
+      sides.push(outgoing)
       continue
     }
     const prev = cues[i - 1]
@@ -24,8 +29,10 @@ function speakerSide(cues: readonly Cue[], index: number): boolean {
     } else {
       runLen++
     }
+    sides.push(outgoing)
   }
-  return outgoing
+  speakerSides.set(cues,sides)
+  return sides[index] ?? false
 }
 
 function rotPoint(px: number, py: number, cx: number, cy: number, angle: number): readonly [number, number] {
@@ -86,10 +93,14 @@ export function thread(f: Frame) {
 
   for (let j = entries.length - 1; j >= 0; j--) {
     const { cue, rows, width, height, outgoing, x, y, i } = entries[j]
-    const py = i === 0
-      ? y - (1 - enter) * f.motion * (height * .52 + 12 * f.unit)
-      : y - delta
+    // Translate the complete measured stack together. Previously history moved
+    // by a full new-card height while the entering card moved only half-height,
+    // so tall/same-side cards intersected during their first 235 ms.
     const angle = i === 0 && !f.quiet ? (1 - enter) * f.motion * (outgoing ? -.048 : .048) : 0
+    const rotationClearance = i === 0
+      ? Math.max(0, (Math.abs(Math.sin(angle)) * width + (Math.cos(angle) - 1) * height) / 2)
+      : 0
+    const py = y - delta - rotationClearance
     const clipFade = smooth((clip[1] - (py + height * .5)) / (size * 1.55))
     const baseFade = i === 0 ? mix(.45, 1, enter) : (i === 4 ? (1 - enter) * .55 : 1)
     const fade = clamp(baseFade * clipFade)

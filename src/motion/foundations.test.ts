@@ -7,6 +7,7 @@ import { overlapArea, placeLabels, type Rect } from './spatialLayout'
 import type { TextAtlas } from './text'
 import { buildTimeline, cueWindow } from './timeline'
 import type { LyricLine, MotionOptions } from './types'
+import { defaults } from '../model'
 
 const makeOptions = (overrides: Partial<MotionOptions> = {}): MotionOptions => ({
   width: 800,
@@ -139,6 +140,14 @@ describe('Scene typography & Painter asymmetric/softness hooks', () => {
 
     const customCodeFrame = new Frame(painter, atlas, makeOptions({ font: 'LyricMotion Imported Custom' }), [cue], cue, 200, 'codestyle')
     expect(customCodeFrame.medium.css).toContain('Custom')
+    const defaultThread = new Frame(painter,atlas,makeOptions({weight:defaults.weight}),[cue],cue,200,'message-thread')
+    expect(defaultThread.medium.weight).toBe(420)
+    const defaultShip = new Frame(painter,atlas,makeOptions({weight:600}),[cue],cue,200,'ship')
+    expect(defaultShip.heavy.weight).toBe(590)
+    const strongerShip = new Frame(painter,atlas,makeOptions({weight:700}),[cue],cue,200,'ship')
+    expect(strongerShip.heavy.weight).toBe(defaultShip.heavy.weight+100)
+    const exactThread = new Frame(painter,atlas,makeOptions({weight:800,fontWeight:500}),[cue],cue,200,'message-thread')
+    expect(exactThread.medium.weight).toBe(500)
 
     painter.begin()
     painter.glyph(atlas.get('hello', 20, codeFrame.medium, 1), 10, 20, '#ffffff', { scaleX: 1.5, scaleY: 0.7, softness: 0.65 })

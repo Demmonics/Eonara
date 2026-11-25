@@ -110,7 +110,7 @@ def receiver_control(hwnd, path, bounds, overlay):
     if point is None:
         raise RuntimeError("Receiver positive control is obscured; leave uncovered monitor space and dismiss overlays")
     start = len(read_log(path))
-    win.gesture(point)
+    win.gesture(point, allowed_roots={hwnd})
     time.sleep(0.28)
     events = events_after(path, start)
     verify_click(events, True, point)
@@ -133,7 +133,7 @@ def self_test(out, result):
             wait_for(lambda: any(e["event"] == "mode" and e["pass_through"] == passing
                                  for e in read_log(top_log)[start_top:]))
             point = position(bounds, (0.5, 0.5))
-            win.gesture(point)
+            win.gesture(point, allowed_roots={bottom, top})
             time.sleep(0.35)
             bottom_events = events_after(bottom_log, start_bottom)
             top_events = events_after(top_log, start_top)
@@ -185,7 +185,7 @@ def regression(args, out, results):
                     wait_for(lambda: not win.is_visible(overlay))
                 except RuntimeError:
                     raise AssertionError(f"{name}: Ctrl+Alt+Shift+L did not hide the overlay") from None
-            hit_before = win.gesture(point, delta, args.settle)
+            hit_before = win.gesture(point, delta, args.settle, allowed_roots={hwnd, overlay})
             time.sleep(args.observe)
             events = events_after(path, start)
             after = win.rect(overlay) if win.is_window(overlay) else None
@@ -262,7 +262,12 @@ def main():
         parser.error("--settle must be 0–3s and --observe must be 0.05–5s")
     args.out.mkdir(parents=True, exist_ok=False)
     original = win.cursor()
-    results = []
+    metrics = win.api(win.user, "GetSystemMetrics", c.c_int, c.c_int)
+    results = [{"case":"desktop-coordinate-context",
+                "thread_dpi_context":str(win.api(win.user, "GetThreadDpiAwarenessContext", w.HANDLE)()),
+                "virtual_screen_physical":[metrics(i) for i in (76,77,78,79)],
+                "pointer_before":original,
+                "note":"Per-monitor-v2 process coordinates; actual receiver coordinates must match exactly."}]
     try:
         if args.mode == "self-test":
             self_test(args.out, results)

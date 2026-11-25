@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-native-window-visible"
+description = "Enables the native_window_visible command without any pre-configured scope."
+commands.allow = ["native_window_visible"]
+
+[[permission]]
+identifier = "deny-native-window-visible"
+description = "Denies the native_window_visible command without any pre-configured scope."
+commands.deny = ["native_window_visible"]

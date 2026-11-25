@@ -176,17 +176,24 @@ export function layoutShipWall(
       cursorY -= Math.max(step * .92, minClear)
     }
     const baseLane = WALL_STAGGER[i % WALL_STAGGER.length] * (flip ? -1 : 1)
-    const rawX = baseLane * measure * staggerSpread
+    // Keep one connected wall: wider stages must not fling adjacent short
+    // words to unrelated horizontal islands. Express registration in baseline
+    // units as well as the available measure.
+    const registration = Math.min(measure * staggerSpread, step * 3.7)
+    const rawX = baseLane * registration
     const limit = Math.max(0, maxHalf - item.width * .56)
     let x = clamp(rawX, -limit, limit)
     if (i > 0 && limit > step * .35 && Math.abs(x - nodes[i - 1].x) < step * .32) {
-      const nudge = nodes[i - 1].x >= 0 ? -limit * staggerSpread : limit * staggerSpread
-      x = clamp(nudge, -limit, limit)
+      const direction = nodes[i - 1].x >= 0 ? -1 : 1
+      x = clamp(nodes[i - 1].x + direction * step * .52, -limit, limit)
     }
     nodes.push({ ...item, x, y: cursorY })
   }
   return nodes
 }
+
+interface ShipRailPlan { speed: number; anchor: number; initial: number; targets: number[]; segments: ChannelSegment[] }
+const railPlans = new WeakMap<readonly ShipWallNode[], ShipRailPlan>()
 
 /**
  * Evaluate the continuous upward wall rail over revealed words using
@@ -205,21 +212,19 @@ export function evalShipRail(
     if (nodes[i].revealMs <= timeMs) active = i
     else break
   }
-  const targetFor = (idx: number) => {
-    const focusRatio = idx === 0 ? .12 : idx === 1 ? -.34 : -.52
-    const baseShift = nodes[idx].size * focusRatio
-    return anchorY - nodes[idx].y + baseShift
+  let plan = railPlans.get(nodes)
+  if (!plan || plan.speed !== speed || plan.anchor !== anchorY) {
+    const targets = nodes.map((node, idx) => anchorY - node.y + node.size * (idx === 0 ? .12 : idx === 1 ? -.34 : -.52))
+    const segments = nodes.slice(1).map((node, idx): ChannelSegment => {
+      const gap = Math.max(60, node.revealMs - nodes[idx].revealMs)
+      const durationMs = clamp(Math.min(340 / speed, gap * .85), 140 / speed, 360 / speed)
+      return {startMs:node.revealMs, durationMs, target:targets[idx + 1], ease:'smooth'}
+    })
+    plan = {speed, anchor:anchorY, initial:targets[0], targets, segments}
+    railPlans.set(nodes, plan)
   }
-  if (quiet) return targetFor(active)
-  const segments: ChannelSegment[] = []
-  for (let i = 1; i <= active; i++) {
-    const prevT = nodes[i - 1].revealMs
-    const startMs = nodes[i].revealMs
-    const gap = Math.max(60, startMs - prevT)
-    const durationMs = clamp(Math.min(340 / speed, gap * .85), 140 / speed, 360 / speed)
-    segments.push({ startMs, durationMs, target: targetFor(i), ease: 'smooth' })
-  }
-  return evalChannel(targetFor(0), segments, timeMs).value
+  if (quiet) return plan.targets[active]
+  return evalChannel(plan.initial, plan.segments, timeMs).value
 }
 
 export interface ShipFocus { x: number; y: number }

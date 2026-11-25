@@ -119,6 +119,24 @@ describe('Ship composition', () => {
     expect(evalShipRail(nodes, 400, 1, false, 40)).toBeGreaterThan(evalShipRail(nodes, 0, 1, false, 40) + 120)
     expect(evalShipRail(nodes, 20, 1, true, 40)).toBe(evalShipRail(nodes, 39, 1, true, 40))
   })
+
+  it('retains a shared registration corridor on wide stages rather than scattering words', () => {
+    const items: ShipWallInput[] = ['One','narrow','wall','with','room'].map((text,i) => ({
+      id:`corridor-${i}`,cueIndex:0,wordIndex:i,text,revealMs:i*300,
+      width:text.length*24,size:50,display:false,accented:i===2,
+    }))
+    const small = layoutShipWall(items,520,56,false)
+    const wide = layoutShipWall(items,1500,56,false)
+    const corridor = Math.max(...wide.map(w=>w.x)) - Math.min(...wide.map(w=>w.x))
+    expect(corridor).toBeLessThan(56*2.3)
+    expect(corridor).toBeGreaterThan(45) // intentionally asymmetric, not a centered lyric column
+    expect(wide.map(w=>w.x)).toEqual(small.map(w=>w.x))
+    const direct = evalShipRail(wide,725,1,false,30)
+    for (const t of [1000,50,350,1700,225]) evalShipRail(wide,t,1,false,30)
+    expect(evalShipRail(wide,725,1,false,30)).toBe(direct)
+    expect(evalShipRail(wide,725,1.5,false,30)).not.toBe(direct)
+    expect(evalShipRail(wide,725,1,false,30)).toBe(direct)
+  })
 })
 
 describe('Fisheye projection', () => {
@@ -463,6 +481,20 @@ describe('Hero frame reconstruction', () => {
     const activeMid = mainCards(atCue2Mid).at(-1)!
     expect(Math.abs(activeMid.angle)).toBeGreaterThan(.01)
     expect(Math.abs(cue2InFrame2.angle)).toBeLessThan(1e-4)
+
+    // Not just settled frames: rotated bounds must stay separate throughout
+    // same-side entry, including early frames when both cards are visible.
+    for (const onset of [820, 1420, 2020]) {
+      for (const dt of [0, 10, 25, 40, 75, 110, 160, 220, 235]) {
+        const bodies = mainCards(h.frame(thread, onset + dt, false, 'message-thread'))
+        for (let k = 1; k < bodies.length; k++) {
+          const older = bodies[k - 1], newer = bodies[k]
+          const extent = (c: typeof newer) =>
+            (Math.abs(Math.cos(c.angle)) * c.h + Math.abs(Math.sin(c.angle)) * c.w) / 2
+          expect(older.y - extent(older) - newer.y - extent(newer)).toBeGreaterThanOrEqual(0)
+        }
+      }
+    }
 
     // Reduced motion is completely flat and static across time
     const quietA = h.frame(thread, 1460, true, 'message-thread')

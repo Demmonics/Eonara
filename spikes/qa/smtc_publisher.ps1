@@ -1,5 +1,5 @@
 param(
-    [ValidateRange(4, 600)][int]$HoldSeconds = 45,
+    [ValidateRange(4, 3600)][int]$HoldSeconds = 45,
     [string]$Title = 'LyricMotion QA Local Track',
     [string]$CommandsFile
 )

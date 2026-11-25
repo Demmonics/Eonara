@@ -161,12 +161,14 @@ def recovery_shortcut():
             key(vk, True)
 
 
-def gesture(point, delta=None, settle=0.24):
+def gesture(point, delta=None, settle=0.24, allowed_roots=None):
     move(*point)
     time.sleep(settle)
     hit = hit_window(point)
     if cursor() != point:
         raise RuntimeError("Pointer moved during setup; rerun with exclusive use of the desktop")
+    if allowed_roots is not None and hit["hit_root"] not in allowed_roots:
+        raise RuntimeError("Pointer target is not an approved test HWND; no button was pressed")
     button(True)
     try:
         if delta:

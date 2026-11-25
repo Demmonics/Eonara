@@ -588,6 +588,30 @@ document.addEventListener('visibilitychange', () => {
 });
 reduced.addEventListener('change', () => { pickPalette(); invalidate(); });
 if (isTauri()) {
+  if (!overlay) {
+    // Native hide/minimize is not consistently reflected by WebView2's Page
+    // Visibility API. Use the host's own window state as an additional guard.
+    let visibilityRevision = 0;
+    const applyNativeVisibility = (visible: boolean) => {
+      showing = visible;
+      if (!visible) {
+        if (frameRequest) cancelAnimationFrame(frameRequest);
+        frameRequest = 0;
+        tone.silence();
+      } else {
+        invalidate();
+        markGallery();
+      }
+    };
+    void listen<boolean>('native_visibility', e => {
+      visibilityRevision++;
+      applyNativeVisibility(e.payload);
+    }).then(async () => {
+      const revision = visibilityRevision;
+      const visible = await native<boolean>('native_window_visible');
+      if (revision === visibilityRevision) applyNativeVisibility(visible);
+    }).catch(console.warn);
+  }
   void listen('media_changed', () => { void refresh(); }).catch(console.warn);
   void listen<NativeOverlayState>('overlay_state', e => onOverlayState(e.payload)).catch(console.warn);
   void listen<{key:string;offset:number}>('lyricmotion-offset', e => {

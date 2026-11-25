@@ -3,12 +3,13 @@
 mod media;
 mod overlay;
 mod settings;
+mod diagnostics;
 
 use tauri::{
     image::Image,
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::TrayIconBuilder,
-    Manager, WindowEvent,
+    Emitter, Manager, WindowEvent,
 };
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
@@ -53,6 +54,7 @@ fn main() {
                             let _ = window.show();
                             let _ = window.unminimize();
                             let _ = window.set_focus();
+                            let _ = window.emit("native_visibility", true);
                         }
                     }
                     "toggle" => overlay::toggle(app),
@@ -71,8 +73,13 @@ fn main() {
             if window.label() == "main" {
                 if let WindowEvent::CloseRequested { api, .. } = event {
                     if window.hide().is_ok() {
+                        let _ = window.emit("native_visibility", false);
                         api.prevent_close();
                     }
+                } else if matches!(event, WindowEvent::Resized(_) | WindowEvent::Focused(_)) {
+                    let visible = window.is_visible().unwrap_or(false)
+                        && !window.is_minimized().unwrap_or(false);
+                    let _ = window.emit("native_visibility", visible);
                 }
             } else if window.label() == "overlay"
                 && matches!(event, WindowEvent::ScaleFactorChanged { .. })
@@ -81,6 +88,8 @@ fn main() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            diagnostics::native_diagnostics,
+            diagnostics::native_window_visible,
             media::media_snapshot,
             media::media_artwork,
             media::media_select,
