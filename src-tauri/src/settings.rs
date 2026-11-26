@@ -50,12 +50,12 @@ fn read(path: &Path) -> Result<Value, String> {
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
             return Ok(Value::Object(Map::new()))
         }
-        Err(_) => return Err("Could not read LyricMotion settings.".into()),
+        Err(_) => return Err("Could not read Eonara settings.".into()),
     };
     let mut content = Vec::new();
     file.take(MAX_BYTES + 1)
         .read_to_end(&mut content)
-        .map_err(|_| "Could not read LyricMotion settings.")?;
+        .map_err(|_| "Could not read Eonara settings.")?;
     if content.len() as u64 <= MAX_BYTES {
         if let Ok(value) = serde_json::from_slice(&content) {
             if valid_settings(&value) {
@@ -63,7 +63,7 @@ fn read(path: &Path) -> Result<Value, String> {
             }
         }
     }
-    Err("LyricMotion settings are invalid or too large.".into())
+    Err("Eonara settings are invalid or too large.".into())
 }
 
 fn write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
@@ -111,7 +111,7 @@ pub async fn save_settings(app: AppHandle, settings: Value) -> Result<(), String
         }
         let state = app.state::<Settings>();
         let _lock = state.0.lock().map_err(|_| "Settings are unavailable.")?;
-        write(&settings_path(&app)?, &bytes).map_err(|_| "Could not save LyricMotion settings.")?;
+        write(&settings_path(&app)?, &bytes).map_err(|_| "Could not save Eonara settings.")?;
         let _ = app.emit("settings_changed", &settings);
         Ok(())
     })

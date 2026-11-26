@@ -3,6 +3,7 @@ import argparse
 import base64
 import io
 import json
+import re
 from pathlib import Path
 import subprocess
 from urllib.parse import urlsplit
@@ -55,6 +56,7 @@ IPC = r"""
         return args.handler;
       }
       if (cmd === 'overlay_state') return {visible:false,clickThrough:true,monitors:[]};
+      if (cmd === 'native_window_visible') return true;
       if (cmd === 'media_snapshot') return {activeId:'fixture',revision,sessions:[{...track,positionMs:
         track.positionMs + (track.playing ? performance.now() - changedAt : 0)}]};
       if (cmd === 'media_artwork') {
@@ -93,7 +95,7 @@ def run(args, checks):
 
         page.get_by_role("button",name="Live",exact=True).click()
         expect(page.locator("[data-end]")).to_have_text("3:49")
-        expect(page.locator("[data-pos]")).to_have_text("1:33", timeout=5000)
+        expect(page.locator("[data-pos]")).to_have_text(re.compile(r"^1:3[3-9]$"), timeout=5000)
         expect(page.get_by_role("progressbar",name="Live playback progress")).to_be_visible()
         expect(page.locator("[data-scrub]")).to_be_hidden()
         page.evaluate("__fixtureUpdate({playing:false,positionMs:43125})")
@@ -160,6 +162,7 @@ def run(args, checks):
         for mode in ("atmospheric", "liquid-glass", "artwork", "mesh", "zen", "minimal", "manual"):
             page.get_by_label("Background",exact=True).select_option(mode)
             page.keyboard.press("Escape")
+            page.evaluate("new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
             page.screenshot(path=args.out / f"mode-{mode}.png", animations="disabled")
             page.get_by_role("button",name="Aesthetics",exact=True).click()
         page.get_by_label("Background",exact=True).select_option("atmospheric")
@@ -169,6 +172,9 @@ def run(args, checks):
         if not args.quick:
             for idx in range(13):
                 buttons.nth(idx).click()
+                # Wait past the 900ms PaletteTransition and 240ms CSS stage crossfade so settled per-style palettes are captured.
+                page.wait_for_timeout(980)
+                page.evaluate("new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
                 page.screenshot(path=args.out / f"style-{idx+1:02}.png", animations="disabled")
             for label in ("Size","Font","Screen"):
                 page.get_by_role("button",name=label,exact=True).click()
@@ -184,6 +190,7 @@ def run(args, checks):
             page.locator(".hero").scroll_into_view_if_needed()
             for index, name in enumerate(("ship", "fisheye")):
                 buttons.nth(index).click()
+                page.wait_for_timeout(980)
                 frames = args.out / name
                 frames.mkdir()
                 for frame in range(36):

@@ -1,4 +1,4 @@
-import { Texture, type BufferGeometry, type Mesh, type ShaderMaterial } from 'three'
+import { Texture, type BufferGeometry, type Color, type Mesh, type ShaderMaterial } from 'three'
 import { describe, expect, it } from 'vitest'
 import { lens } from './fisheye'
 import { Frame } from './frame'
@@ -15,7 +15,7 @@ import {
   type LensField,
   type ShipWallInput,
 } from './heroGeometry'
-import { ledger, notifications, thread } from './interfaceStyles'
+import { ledger, mapAttachmentKind, notifications, thread } from './interfaceStyles'
 import { Painter } from './painter'
 import { ship } from './ship'
 import {
@@ -118,6 +118,24 @@ describe('Ship composition', () => {
     }
     expect(evalShipRail(nodes, 400, 1, false, 40)).toBeGreaterThan(evalShipRail(nodes, 0, 1, false, 40) + 120)
     expect(evalShipRail(nodes, 20, 1, true, 40)).toBe(evalShipRail(nodes, 39, 1, true, 40))
+  })
+
+  it('retains a shared registration corridor on wide stages rather than scattering words', () => {
+    const items: ShipWallInput[] = ['One','narrow','wall','with','room'].map((text,i) => ({
+      id:`corridor-${i}`,cueIndex:0,wordIndex:i,text,revealMs:i*300,
+      width:text.length*24,size:50,display:false,accented:i===2,
+    }))
+    const small = layoutShipWall(items,520,56,false)
+    const wide = layoutShipWall(items,1500,56,false)
+    const corridor = Math.max(...wide.map(w=>w.x)) - Math.min(...wide.map(w=>w.x))
+    expect(corridor).toBeLessThan(56*2.3)
+    expect(corridor).toBeGreaterThan(45) // intentionally asymmetric, not a centered lyric column
+    expect(wide.map(w=>w.x)).toEqual(small.map(w=>w.x))
+    const direct = evalShipRail(wide,725,1,false,30)
+    for (const t of [1000,50,350,1700,225]) evalShipRail(wide,t,1,false,30)
+    expect(evalShipRail(wide,725,1,false,30)).toBe(direct)
+    expect(evalShipRail(wide,725,1.5,false,30)).not.toBe(direct)
+    expect(evalShipRail(wide,725,1,false,30)).toBe(direct)
   })
 })
 
@@ -224,7 +242,8 @@ describe('Hero frame reconstruction', () => {
 
   function makeHarness(customCues = cues) {
     const painter = new Painter()
-    const texture = new Texture()
+    const texByText = new Map<string, Texture>()
+    const textByTex = new WeakMap<Texture, string>()
     const width = (text: string, size: number) => Array.from(text).length * size * .58
     const rows = (text: string, size: number, faceOrLimit: unknown, limit?: number): Row[] => {
       const maxW = typeof faceOrLimit === 'number' ? faceOrLimit : (limit ?? 9999)
@@ -250,8 +269,14 @@ describe('Hero frame reconstruction', () => {
     const atlas = {
       revision: 0, width, rows,
       get: (text: string, size: number) => {
+        let texture = texByText.get(text)
+        if (!texture) {
+          texture = new Texture()
+          texByText.set(text, texture)
+          textByTex.set(texture, text)
+        }
         const advance = width(text, size)
-        return { width: advance + 10, advance, padding: 5, height: size + 8, texture, ink: { x: 0, y: 0, width: advance, height: size * .72 } }
+        return { text, width: advance + 10, advance, padding: 5, height: size + 8, texture, ink: { x: 0, y: 0, width: advance, height: size * .72 } }
       },
     } as unknown as TextAtlas
 
@@ -272,6 +297,7 @@ describe('Hero frame reconstruction', () => {
         planes: meshes.map(mesh => [mesh.position.toArray(), mesh.scale.toArray(), mesh.renderOrder, mesh.material.uniforms.uOpacity.value])
           .sort((a, b) => Number(a[2]) - Number(b[2])),
         glyphDetails: glyphMeshes.map(mesh => ({
+          text: textByTex.get(mesh.material.uniforms.uMap.value as Texture),
           x: mesh.position.x,
           y: mesh.position.y,
           w: mesh.scale.x,
@@ -286,6 +312,7 @@ describe('Hero frame reconstruction', () => {
           w: mesh.scale.x,
           h: mesh.scale.y,
           angle: mesh.rotation.z,
+          fillColor: '#' + (mesh.material.uniforms.uInk.value as Color).getHexString(),
           opacity: Number(mesh.material.uniforms.uOpacity.value),
           radius: Number(mesh.material.uniforms.uCard.value.x),
         })),
@@ -296,7 +323,7 @@ describe('Hero frame reconstruction', () => {
       frame,
       dispose: () => {
         painter.dispose()
-        texture.dispose()
+        for (const texture of texByText.values()) texture.dispose()
       },
     }
   }
@@ -464,10 +491,67 @@ describe('Hero frame reconstruction', () => {
     expect(Math.abs(activeMid.angle)).toBeGreaterThan(.01)
     expect(Math.abs(cue2InFrame2.angle)).toBeLessThan(1e-4)
 
+    // Not just settled frames: rotated bounds must stay separate throughout
+    // same-side entry, including early frames when both cards are visible.
+    for (const onset of [820, 1420, 2020]) {
+      for (const dt of [0, 10, 25, 40, 75, 110, 160, 220, 235]) {
+        const bodies = mainCards(h.frame(thread, onset + dt, false, 'message-thread'))
+        for (let k = 1; k < bodies.length; k++) {
+          const older = bodies[k - 1], newer = bodies[k]
+          const extent = (c: typeof newer) =>
+            (Math.abs(Math.cos(c.angle)) * c.h + Math.abs(Math.sin(c.angle)) * c.w) / 2
+          expect(older.y - extent(older) - newer.y - extent(newer)).toBeGreaterThanOrEqual(0)
+        }
+      }
+    }
+
     // Reduced motion is completely flat and static across time
     const quietA = h.frame(thread, 1460, true, 'message-thread')
     const quietB = h.frame(thread, 1850, true, 'message-thread')
     expect(mainCards(quietA).every(c => c.angle === 0)).toBe(true)
+    expect(quietA.planes).toEqual(quietB.planes)
+    h.dispose()
+  })
+
+  it('renders procedural Embedded Map Attachment Cards deterministically in Message Thread without overlay leakage or bubble overlap', () => {
+    const mapCues = buildTimeline([
+      timedLine('Blue hours open slowly', ['Blue', 'hours', 'open', 'slowly'], 0, 600),
+      timedLine('All the windows take the light', ['All', 'the', 'windows', 'take', 'the', 'light'], 2800, 450),
+      timedLine('Let the silence hold a shape', ['Let', 'the', 'silence', 'hold', 'a', 'shape'], 5800, 500),
+      timedLine('Turn the edges into gold', ['Turn', 'the', 'edges', 'into', 'gold'], 9000, 500),
+      timedLine('Trace a line around the moon', ['Trace', 'a', 'line', 'around', 'the', 'moon'], 12200, 500),
+    ])
+    expect(mapAttachmentKind(mapCues[0], mapCues, 760, false)).toBe('route')
+    expect(mapAttachmentKind(mapCues[4], mapCues, 760, false)).toBe('radar')
+    expect(mapAttachmentKind(mapCues[0], mapCues, 760, true)).toBeUndefined()
+    expect(mapAttachmentKind(mapCues[1], mapCues, 760, false)).toBeUndefined()
+
+    const h = makeHarness(mapCues)
+    const routeDirect = h.frame(thread, 1100, false, 'message-thread')
+    h.frame(thread, 200, false, 'message-thread')
+    h.frame(thread, 12900, false, 'message-thread')
+    expect(h.frame(thread, 1100, false, 'message-thread')).toEqual(routeDirect)
+
+    expect(routeDirect.strokes).toBeGreaterThan(8)
+    expect(routeDirect.glyphDetails.some(g => g.text === 'Blue Harbor District')).toBe(true)
+
+    const radarFrame = h.frame(thread, 13400, false, 'message-thread')
+    expect(radarFrame.glyphDetails.some(g => g.text === 'Crescent Bay Ave')).toBe(true)
+    expect(radarFrame.strokes).toBeGreaterThan(8)
+
+    // Ensure cue 1 bubble entering beneath cue 0 route map card never overlaps rotated bounds
+    const mainCards = (res: ReturnType<typeof h.frame>) => res.cardDetails.filter(c => c.opacity > .42 && c.w > 40 && c.fillColor !== '#1a2b4d')
+    for (const dt of [0, 20, 60, 120, 200, 235]) {
+      const bodies = mainCards(h.frame(thread, 2800 + dt, false, 'message-thread'))
+      for (let k = 1; k < bodies.length; k++) {
+        const older = bodies[k - 1], newer = bodies[k]
+        const extent = (c: typeof newer) => (Math.abs(Math.cos(c.angle)) * c.h + Math.abs(Math.sin(c.angle)) * c.w) / 2
+        expect(older.y - extent(older) - newer.y - extent(newer)).toBeGreaterThanOrEqual(0)
+      }
+    }
+
+    const quietA = h.frame(thread, 900, true, 'message-thread')
+    const quietB = h.frame(thread, 1900, true, 'message-thread')
     expect(quietA.planes).toEqual(quietB.planes)
     h.dispose()
   })

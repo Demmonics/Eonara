@@ -1,4 +1,4 @@
-# LyricMotion native host
+# Eonara native host
 
 Tauri 2 serves the Vite renderer at `http://localhost:5173` in dev and bundles `../dist` for a production build. The hidden overlay opens the same renderer at `index.html?overlay=1` and does **not** show on initial launch. Settings and playback integration require the Tauri host; a standalone browser has no access to GSMTC.
 

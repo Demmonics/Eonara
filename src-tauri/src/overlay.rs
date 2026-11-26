@@ -99,7 +99,7 @@ fn overlay_window(app: &AppHandle) -> Result<WebviewWindow, String> {
 pub fn initialize(app: &AppHandle) {
     let result =
         WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("index.html?overlay=1".into()))
-            .title("LyricMotion Overlay")
+            .title("Eonara Overlay")
             .inner_size(760.0, 260.0)
             .visible(false)
             .focused(false)

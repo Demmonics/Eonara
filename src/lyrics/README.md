@@ -1,4 +1,4 @@
-# LyricMotion lyric sources
+# Eonara lyric sources
 
 - `lookupLyrics({ title, artist, album?, durationMs? }, { signal?, cache?, force?, estimate? })` queries LRCLIB’s public v1 API. It uses title/artist plus album and duration when supplied, rejects mismatched recordings, and avoids guessing between conflicting editions. An aborted lookup rejects with the signal’s reason; missing lyrics and service errors return `quality: 'unavailable'` with explanatory messages. Use `force: true` to refresh a cached result.
 - `parseLyrics(text, format, { durationMs? })` accepts `lrc`, `standard-lrc`, `enhanced-lrc`, `plain`, `ttml`, or `lyricsfile`. TTML uses the webview XML parser and supports media-time text and inline timings, not every subtitle feature. LRC positive offsets display earlier; Lyricsfile `offset_ms` is not interpreted because the draft does not specify its meaning.

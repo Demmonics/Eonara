@@ -164,7 +164,7 @@ pub fn start(app: AppHandle) {
     {
         let worker_app = app.clone();
         if std::thread::Builder::new()
-            .name("lyricmotion-gsmtc".into())
+            .name("eonara-gsmtc".into())
             .spawn(move || {
                 platform::watch(worker_app);
             })

@@ -52,10 +52,10 @@ export interface BackgroundSettings {
 
 export const defaultBackgroundSettings = Object.freeze({
   mode: 'atmospheric',
-  intensity: 0.76,
+  intensity: 0.78,
   motion: 0.46,
   grain: 0.23,
-  darkVeil: 0.39,
+  darkVeil: 0.36,
   blur: 0.73,
   saturation: 1,
   brightness: 1,
@@ -85,7 +85,7 @@ export class BackgroundScene {
   private readonly uniforms = {
     uSize: { value: new Vector2(1, 1) },
     uTime: { value: 0 }, uIntensity: { value: 0 }, uGrain: { value: 0 }, uVeil: { value: 0 },
-    uBlur: { value: 0 }, uMode: { value: 0 }, uLimit: { value: 0.34 }, uDpr: { value: 1 },
+    uBlur: { value: 0 }, uMode: { value: 0 }, uLimit: { value: 0.21 }, uDpr: { value: 1 },
     uSaturation: { value: 1 }, uBrightness: { value: 1 }, uTint: { value: 0.76 },
     uGlass: { value: 0.64 }, uContrast: { value: 0.5 },
     uPrimary: { value: new Color() }, uSecondary: { value: new Color() },
@@ -183,8 +183,8 @@ export class BackgroundScene {
       u.uSecondary.value.setStyle(palette.secondary);
       u.uAccent.value.setStyle(palette.accent);
       u.uBackground.value.setStyle(palette.background);
-      // Soft luminous ceiling ensuring text contrast without crushing album vibrancy
-      u.uLimit.value = 0.34;
+      // Soft luminous ceiling ensuring crisp >=5:1 lyric legibility without crushing atmospheric glow
+      u.uLimit.value = 0.21;
     }
     const artwork = isArtMode(mode) ? settings.artworkDataUrl ?? undefined : undefined;
     if (artwork !== this.requestedUrl) this.loadArtwork(artwork);

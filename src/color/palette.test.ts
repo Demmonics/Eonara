@@ -56,6 +56,26 @@ describe('semantic palette', () => {
       seen.add(p.primary);
     }
     expect(seen.size).toBe(ids.length);
+    for (const signature of ['ship', 'fisheye', 'visual', 'branches', 'web', 'message-thread']) {
+      expect(chroma(hexToLab(demoStylePalette(signature).secondary))).toBeGreaterThan(0.08);
+    }
+  });
+
+  it('extracts vibrant distinct palettes across compositional album cover profiles', () => {
+    const profiles = [
+      // traitor-like plum/lavender portrait cover
+      generatedPixels((x, y) => y < 0.65 ? [146 + x * 36, 98 + x * 22, 168 + y * 24] : [58, 36, 84]),
+      // the_cure-like deep cobalt/ice blue cover
+      generatedPixels((x, y) => [28 + x * 24, 88 + y * 36, 204 - x * 20]),
+      // UNETHICAL-like neon magenta + cobalt rim cover
+      generatedPixels((x) => x < 0.52 ? [178, 28, 96] : [36, 68, 178]),
+      // Reminder-like crimson ember nocturnal cover
+      generatedPixels((x, y) => y < 0.5 ? [184, 34, 48] : [44, 14, 24]),
+    ];
+    const palettes = profiles.map(px => paletteFromPixels(px)!);
+    for (const p of palettes) expectReadable(p);
+    expect(distance2(hexToLab(palettes[0].primary), hexToLab(palettes[1].primary))).toBeGreaterThan(0.04);
+    expect(distance2(hexToLab(palettes[1].primary), hexToLab(palettes[3].primary))).toBeGreaterThan(0.08);
   });
 
   it('makes grayscale covers achromatic without losing their tonal hierarchy', () => {
@@ -127,7 +147,10 @@ it('leaves static and reduced-motion backgrounds to the caller’s demand loop a
   expect(scene.isAnimated({ mode: 'mesh', motion: 0 })).toBe(false);
   expect(scene.isAnimated({ mode: 'liquid-glass', reducedMotion: true })).toBe(false);
   expect(scene.isAnimated({ mode: 'artwork' })).toBe(true);
-  scene.update(1920, 1080, 0, defaultPalette, { mode: 'mesh', grain: 0.25 }, 2);
+  for (const mode of ['atmospheric', 'liquid-glass', 'blurred-art', 'mesh', 'zen', 'minimal', 'manual'] as const) {
+    scene.update(1920, 1080, 16, defaultPalette, { mode, grain: 0.23 }, 1.25);
+  }
+  scene.update(1920, 1080, 32, defaultPalette, { mode: 'mesh', grain: 0.25 }, 2);
   expect(scene.isAnimated()).toBe(true);
   scene.dispose();
   expect(scene.scene.children).toHaveLength(0);

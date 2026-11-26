@@ -1,22 +1,38 @@
-# LyricMotion architecture
+# Eonara Architecture
 
-The two surface types share a TypeScript/Vite/Three.js renderer. The main surface has an atmospheric shader pass, a typography pass and an accessible DOM interface. The transparent surface has only the typography pass unless the user explicitly increases backdrop opacity. On playback both surfaces derive time from a native timeline snapshot plus a local monotonic clock; they don't independently guess what is playing. Rust/Tauri owns Windows integration and OS window lifetime.
+Eonara renders two synchronized WebGL2 surfaces from one shared TypeScript/Three.js engine:
+
+- **Main Workspace Window**: Full atmospheric shader pass, silver-halide optical grain, kinetic typography pass, gallery thumbnails, and frosted-glass UI controls.
+- **Transparent Desktop Overlay**: Always-on-top click-through typography surface with optional localized backdrop scrim and global **Ctrl+Alt+Shift+L** recovery shortcut.
+
+```mermaid
+flowchart TB
+  WinRT["Windows Media Control (GSMTC)"] -->|"Sessions + Thumbnail"| Rust["src-tauri/ Native Host"]
+  Rust -->|"media_snapshot / media_artwork"| Clock["PlaybackClock & Transport<br/>src/model.ts · src/transport.ts"]
+  Clock -->|"Generation-guarded track metadata"| Lyrics["src/lyrics/<br/>LRCLIB + LRC / TTML / YAML"]
+  Rust -->|"Thumbnail Data URL"| Color["src/color/<br/>OKLab Extraction + Materials + Shaders"]
+  Clock -->|"Monotonic cue time"| Motion["src/motion/<br/>Painter + 13 Kinetic Styles"]
+  Lyrics --> Motion
+  Color --> Motion
+  Color --> UI["src/ui.ts + style.css"]
+```
+
+## Module Responsibilities
 
 | Path | Responsibility |
 |---|---|
-| `src-tauri/` | WinRT/GSMTC session inventory and thumbnail streams, Tauri windows, tray and native recovery |
-| `src/model.ts`, `src/main.ts` | Clock anchoring, session selection, cancellation, demo/live split, renderer lifecycle and typed events |
-| `src/lyrics/` | Independent timed-document providers, lookup and matching, parsing and estimates |
-| `src/motion/` | Deterministic geometry, shaped typography, animation scene selection |
-| `src/color/` | Independent artwork decode and palette extraction, semantic colours, interpolation and background GPU pass |
-| `src/ui.ts`, `src/style.css` | Preview, gallery, floating controls, accessibility and status interaction |
-| `src/storage.ts` | Local IndexedDB font and user-supplied lyric persistence |
-| `spikes/`, `tests/` | Feasibility, Windows input/timing probes and verification |
+| `src-tauri/` | WinRT GSMTC session monitoring & thumbnail streams, Tauri window lifecycle, branded system tray, global shortcut recovery, atomic `settings-v1.json` persistence |
+| `src/model.ts`, `src/main.ts` | Monotonic playback clock anchoring, active player selection, async generation cancellation, Demo/Live mode switching, Splash & About UI wiring |
+| `src/lyrics/` | Independent LRC, Enhanced LRC, TTML, and Lyricsfile YAML parsers, matching rules, bounded LRCLIB lookup, and opt-in timing estimation |
+| `src/motion/` | Deterministic 3D typography geometry (`Painter`, `TextAtlas`, `choreography.ts`, `heroGeometry.ts`) and 13 kinetic/spatial styles |
+| `src/color/` | Web Worker OKLab/OKLCH artwork quantization, curated per-style demo grades, contrast-bounded glass materials (`materials.ts`), and atmospheric GPU background passes |
+| `src/ui.ts`, `src/style.css` | Hero stage chrome, style gallery, Zen harmonic gradient editor, Splash entrance, and About Eonara modal |
+| `src/storage.ts` | Local IndexedDB font and user-imported lyrics persistence (`lyricmotion-local` preserved for upgrade continuity) |
+| `assets/brand/`, `public/brand/` | Official Eonara SVG marks, wordmarks, hero artwork, icons, and NSIS branding derived from `logo-eonara.png` |
+| `tests/`, `spikes/qa/` | Vitest unit suites, Playwright headless visual fixture runners, colour/grain audits, and Win32 overlay oracles |
 
-The artwork cache never drives the transport clock. Palette transitions and style switches do not change the playback time, and asynchronous art or lyrics from old track generations are discarded. `src/model.ts` separates platform snapshots from rendering. No remote browser content is needed. A permitted lyrics lookup sends only track identification fields to the provider. There is no Spotify authentication, Spotify Web API, Spicetify runtime dependency or backend.
+## Upgrade & Invariant Design
 
-Provisional decision: Windows x64 using MSVC-target Rust and an accelerated WebView2 transparent surface. The DLL/graphics trust gate and cross-process input probe determine whether this is fit for release. Browser previews do not prove either property.
-
-## v0.3 implementation update
-
-`src/transport.ts` projects player position, known duration and offset cue time from the same clock. Lyrics lookup cancels superseded requests and checks the generation before publishing. Artwork separately checks the generation and request sequence, including after decode. `src/color/gradientState.ts` validates persisted points and presets. `src/color/materials.ts` maps the palette to toolbar, popover, gallery and ink roles.
+- **Identifier continuity**: Tauri `identifier` remains `app.lyricmotion.desktop` so existing user settings (`settings-v1.json`), WebView2 origin storage, IndexedDB imported fonts/lyrics, and `localStorage` caches carry forward cleanly across upgrades.
+- **Timeline isolation**: Artwork decoding, palette interpolation, and style switches never mutate transport playback clocks. Superseded async lyric lookups and thumbnail decodes are discarded via generation counters.
+- **No external runtime dependencies**: All fonts, icons, shaders, and UI assets are bundled locally; only user-enabled LRCLIB lookups contact `https://lrclib.net`.

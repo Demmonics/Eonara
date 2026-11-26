@@ -17,7 +17,7 @@
   },
   {
     "name": "click-through disabled (lyric area)",
-    "prompt": "In the LyricMotion main window, turn Click-through OFF but keep Show desktop lyrics ON.",
+    "prompt": "In the Eonara main window, turn Click-through OFF but keep Show desktop lyrics ON.",
     "point": [0.50, 0.50],
     "receiver": "none",
     "hit": "app",
@@ -44,7 +44,7 @@
   },
   {
     "name": "reopened overlay remains passive",
-    "prompt": "Use the LyricMotion tray Show / Hide Overlay command to reopen. Do not change Click-through.",
+    "prompt": "Use the Eonara tray Show / Hide Overlay command to reopen. Do not change Click-through.",
     "point": [0.50, 0.50],
     "receiver": "click",
     "hit": "receiver",

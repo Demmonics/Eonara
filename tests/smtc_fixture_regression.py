@@ -21,7 +21,7 @@ def sample(title):
 
 
 def run(out, records):
-    title = "LyricMotion QA " + uuid.uuid4().hex[:10]
+    title = "Eonara QA " + uuid.uuid4().hex[:10]
     renamed = title + " next"
     commands = out / "commands.txt"
     commands.touch()
@@ -49,7 +49,7 @@ def run(out, records):
             try:
                 expect("playing local metadata", title,
                        lambda s: s and s["status"] == "Playing" and s["duration_ms"] == 60000
-                       and s["artist"] == "LyricMotion QA" and s["album"] == "Offline SMTC Fixture")
+                       and s["artist"] == "Eonara QA" and s["album"] == "Offline SMTC Fixture")
                 command("pause")
                 expect("paused", title, lambda s: s and s["status"] == "Paused")
                 command("seek 31")

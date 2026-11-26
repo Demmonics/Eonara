@@ -185,7 +185,7 @@ async function ensureFont(family: string) {
   if (family === currentFont) return;
   currentFont = family;
   try {
-    if (family.startsWith('LyricMotion Imported ') && !ownedFonts.has(family)) {
+    if ((family.startsWith('Eonara Imported ') || family.startsWith('LyricMotion Imported ')) && !ownedFonts.has(family)) {
       const data = await readLocal<ArrayBuffer>(`font:${family}`);
       if (!data) return;
       const face = await new FontFace(family, data).load();
@@ -332,7 +332,7 @@ async function importFile(file: File, target: 'font'|'lyrics') {
       const buffer = await file.arrayBuffer();
       const magic = new DataView(buffer).getUint32(0);
       if (![0x00010000,0x4f54544f,0x74727565].includes(magic)) throw new Error('This is not a supported TTF or OTF file.');
-      const family = `LyricMotion Imported ${file.name.slice(0,-4).replace(/[^\p{L}\p{N} -]/gu,' ').slice(0,70)}`;
+      const family = `Eonara Imported ${file.name.slice(0,-4).replace(/[^\p{L}\p{N} -]/gu,' ').slice(0,70)}`;
       const face = await new FontFace(family, buffer).load();
       document.fonts.add(face); ownedFonts.add(family);
       await writeLocal(`font:${family}`,buffer);
@@ -588,6 +588,30 @@ document.addEventListener('visibilitychange', () => {
 });
 reduced.addEventListener('change', () => { pickPalette(); invalidate(); });
 if (isTauri()) {
+  if (!overlay) {
+    // Native hide/minimize is not consistently reflected by WebView2's Page
+    // Visibility API. Use the host's own window state as an additional guard.
+    let visibilityRevision = 0;
+    const applyNativeVisibility = (visible: boolean) => {
+      showing = visible;
+      if (!visible) {
+        if (frameRequest) cancelAnimationFrame(frameRequest);
+        frameRequest = 0;
+        tone.silence();
+      } else {
+        invalidate();
+        markGallery();
+      }
+    };
+    void listen<boolean>('native_visibility', e => {
+      visibilityRevision++;
+      applyNativeVisibility(e.payload);
+    }).then(async () => {
+      const revision = visibilityRevision;
+      const visible = await native<boolean>('native_window_visible');
+      if (typeof visible === 'boolean' && revision === visibilityRevision) applyNativeVisibility(visible);
+    }).catch(console.warn);
+  }
   void listen('media_changed', () => { void refresh(); }).catch(console.warn);
   void listen<NativeOverlayState>('overlay_state', e => onOverlayState(e.payload)).catch(console.warn);
   void listen<{key:string;offset:number}>('lyricmotion-offset', e => {
@@ -697,5 +721,9 @@ if (fixtureMode) {
 void ensureFont(settings.font);
 pickPalette();
 updateUi();
+if (!overlay) {
+  if (searchParams.get('splash') === '1') ui?.showSplash(true);
+  else if (!fixtureMode && !reduced.matches) ui?.showSplash(false);
+}
 if (fixtureMode) renderFrame(performance.now(), true);
 else invalidate();

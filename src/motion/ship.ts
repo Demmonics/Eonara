@@ -16,6 +16,7 @@ interface WallPlan {
   step: number
   nodes: ShipWallNode[]
   cueIndexStart: number
+  cueByIndex: Map<number, Cue>
 }
 
 interface ShapedPlan {
@@ -121,7 +122,7 @@ function wallPlanFor(f: Frame, cues: readonly Cue[]): WallPlan {
   if (existing) return existing
 
   const measure = f.lane * (f.overlay ? .90 : .84)
-  const baseSize = Math.min(f.em(60), f.h * .106)
+  const baseSize = Math.min(f.em(64), f.h * .110)
   const step = baseSize * 1.08
   const items: ShipWallInput[] = []
 
@@ -168,7 +169,8 @@ function wallPlanFor(f: Frame, cues: readonly Cue[]): WallPlan {
 
   const flip = !!(hash(cues[0].text) & 1)
   const nodes = layoutShipWall(items, measure, step, flip)
-  const plan: WallPlan = { measure, baseSize, step, nodes, cueIndexStart: cues[0].index }
+  const plan: WallPlan = { measure, baseSize, step, nodes, cueIndexStart: cues[0].index,
+    cueByIndex:new Map(cues.map(c => [c.index,c])) }
   if (byAnchor.size > 16) byAnchor.clear()
   byAnchor.set(key, plan)
   return plan
@@ -272,8 +274,7 @@ export function ship(f: Frame) {
   const maxVisible = 7
   const firstIdx = Math.max(0, activeIdx - (maxVisible - 1))
 
-  const cueByIndex = new Map<number, Cue>()
-  for (const c of cues) cueByIndex.set(c.index, c)
+  const { cueByIndex } = plan
 
   for (let i = firstIdx; i <= activeIdx; i++) {
     const node = nodes[i]
@@ -312,7 +313,7 @@ export function ship(f: Frame) {
       const owner = cueByIndex.get(node.cueIndex)
       if (owner) {
         const overMs = Math.max(0, f.time - owner.endMs)
-        cueFade = clamp(1 - smooth((overMs - 650) / 1100), .18, 1)
+        cueFade = clamp(1 - smooth((overMs - 550) / 950), 0, 1)
       }
     }
     const entryAlpha = mix(node.wordIndex === 0 ? .88 : .58, 1, arrive)
@@ -333,8 +334,8 @@ export function ship(f: Frame) {
     const run = f.atlas.get(node.text, node.size, face, f.dpr, f.overlay)
 
     if (node.accented) {
-      const padX = node.size * .24 * drawScale
-      const padY = node.size * .22 * drawScale
+      const padX = node.size * .19 * drawScale
+      const padY = node.size * .18 * drawScale
       const cardW = (Math.max(run.ink.width, run.advance) * drawScale) + padX
       const cardH = Math.max(run.ink.height * drawScale + padY, node.size * .78 * drawScale)
       f.p.card(px + run.ink.x * drawScale, py + run.ink.y * drawScale, cardW, cardH, f.backing, {

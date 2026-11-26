@@ -1,6 +1,6 @@
 param(
-    [ValidateRange(4, 600)][int]$HoldSeconds = 45,
-    [string]$Title = 'LyricMotion QA Local Track',
+    [ValidateRange(4, 3600)][int]$HoldSeconds = 45,
+    [string]$Title = 'Eonara QA Local Track',
     [string]$CommandsFile
 )
 
@@ -44,7 +44,7 @@ try {
         $properties = $item.GetDisplayProperties()
         $properties.Type = [Windows.Media.MediaPlaybackType]::Music
         $properties.MusicProperties.Title = $TrackTitle
-        $properties.MusicProperties.Artist = 'LyricMotion QA'
+        $properties.MusicProperties.Artist = 'Eonara QA'
         $properties.MusicProperties.AlbumTitle = 'Offline SMTC Fixture'
         $item.ApplyDisplayProperties($properties)
     }

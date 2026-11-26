@@ -52,13 +52,17 @@ export class Frame {
     this.intensity = multiplier(options.intensity, 0, 2)
     this.speed = multiplier(options.speed, .25, 3)
 
-    const userWeight = options.fontWeight ?? options.weight
-    const baseWeight = userWeight ?? this.typography.normalWeight
-    const weightOffset = userWeight !== undefined ? userWeight - 600 : 0
+    // fontWeight is an absolute per-scene override. Legacy `weight` is the global
+    // toolbar dial (600 is its shipped neutral), applied as an offset to each role.
+    // Treating that dial as literal body weight made default chat text 700 and
+    // display words 800, wiping out the scene's intended typography.
+    const userWeight = options.fontWeight
+    const dial = Number.isFinite(options.weight) ? options.weight! : 600
+    const weightOffset = dial - 600
     const customFont = options.font?.trim()
     const useUserFont = !!customFont && (
       this.typography.fontRole === 'kinetic'
-      || customFont.startsWith('LyricMotion Imported ')
+      || customFont.startsWith('Eonara Imported ') || customFont.startsWith('LyricMotion Imported ')
       || (customFont !== 'Inter Variable' && customFont !== 'Segoe UI Variable')
     )
     const family = useUserFont
@@ -69,9 +73,10 @@ export class Frame {
           ? systemUiFont
           : customFont || 'Inter Variable'
 
-    this.regular = face(family, clamp((userWeight !== undefined ? baseWeight - 100 : this.typography.historyWeight + weightOffset), 300, 900))
-    this.medium = face(family, clamp((userWeight !== undefined ? baseWeight : this.typography.normalWeight + weightOffset), 300, 900))
-    this.heavy = face(family, clamp((userWeight !== undefined ? baseWeight + 100 : this.typography.displayWeight + weightOffset), 350, 900))
+    const explicit = typeof userWeight === 'number' && Number.isFinite(userWeight)
+    this.regular = face(family, clamp(explicit ? userWeight - 80 : this.typography.historyWeight + weightOffset, 300, 900))
+    this.medium = face(family, clamp(explicit ? userWeight : this.typography.normalWeight + weightOffset, 300, 900))
+    this.heavy = face(family, clamp(explicit ? userWeight + 80 : this.typography.displayWeight + weightOffset, 350, 900))
     this.token = activeToken(cue, time)
     this.ti = tokenIndex(cue, time)
     this.dpr = clamp(options.pixelRatio ?? 1.5, 1, 2.5)

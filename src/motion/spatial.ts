@@ -1,4 +1,4 @@
-import { Frame, lookupIcon } from './frame'
+import { Frame, ellipse, lookupIcon } from './frame'
 import type { Point } from './painter'
 import { clampBoxToBounds, placeLabels, type LabelCandidate, type LabelRequest, type PlacedLabel, type Rect } from './spatialLayout'
 import { clamp, hash, mix, rand, settle, smooth, spring, type Cue, type Token } from './timeline'
@@ -238,6 +238,32 @@ export function evalBranchesArc(
   return mix(curr.junctionArc, nextArc, prog * .78)
 }
 
+function drawStar4Pt(
+  f: Frame,
+  x: number,
+  y: number,
+  r: number,
+  color: string,
+  opacity: number,
+  active: boolean,
+  orbitRadius = 0,
+) {
+  if (opacity <= .01) return
+  const { p } = f
+  f.circle(x, y, r * (active ? 2.1 : 1.45), color, { opacity: opacity * (active ? .16 : .10) })
+  const spikeR = r * (active ? 1.55 : 1.32)
+  const spikeW = Math.max(.9, r * .26)
+  p.path([[x - spikeR, y], [x + spikeR, y]], color, spikeW, { opacity: opacity * .92 })
+  p.path([[x, y - spikeR], [x, y + spikeR]], color, spikeW, { opacity: opacity * .92 })
+  p.card(x, y, r * .92, r * .92, color, { angle: Math.PI * .25, radius: .8, opacity, border: 0, fill: 1 })
+  f.circle(x, y, Math.max(1.1 * f.unit, r * .44), '#ffffff', { opacity: clamp(opacity * 1.15) })
+  if (active && orbitRadius > 2) {
+    p.path(ellipse(orbitRadius, orbitRadius, 28, x, y), '#eef2ff', Math.max(1.1, 1.35 * f.unit), {
+      opacity: opacity * .82,
+    })
+  }
+}
+
 export function branches(f: Frame) {
   const { p } = f
   p.root.rotation.set(0, 0, 0)
@@ -251,16 +277,17 @@ export function branches(f: Frame) {
   const tipArc = evalBranchesArc(layout, f.time, f.speed, f.quiet)
   const activeSlice = sliceSplineByArc(layout.spine, tipArc)
 
-  // Subtle unrevealed guide backbone + bright advancing spine to live tip
-  p.path(layout.spine.points, f.muted, 1.0, { opacity: .16 })
+  // Soft atmospheric guide backbone + layered glowing active vine spine
+  p.path(layout.spine.points, f.muted, 1.0, { opacity: .14 })
   if (activeSlice.points.length >= 2) {
-    p.path(activeSlice.points, '#c4e0cd', 2.2, { opacity: .90 })
+    p.path(activeSlice.points, '#86e2b4', 5.2 * f.unit, { opacity: .18 })
+    p.path(activeSlice.points, '#effcf5', 2.05 * f.unit, { opacity: .94 })
   }
 
-  // Advancing glowing tip marker
+  // Advancing glowing tip orb + halo
   const [tipX, tipY] = activeSlice.tip
-  f.circle(tipX, tipY, 6.2 * f.unit, '#c4e0cd', { opacity: .24 })
-  f.circle(tipX, tipY, 2.8 * f.unit, '#f7fff9', { opacity: .98 })
+  f.circle(tipX, tipY, 8.2 * f.unit, '#9ef0c8', { opacity: .20 })
+  f.circle(tipX, tipY, 3.2 * f.unit, '#f8fffb', { opacity: .98 })
 
   const obstacles: Rect[] = []
   for (let i = 0; i < layout.spine.points.length; i += 4) {
@@ -277,15 +304,22 @@ export function branches(f: Frame) {
     if (!seen && !live && f.time < node.token.startMs - 80) return
 
     const twigFrac = f.quiet ? Number(seen) : settle(f.advance(170, node.token.startMs - 40))
-    const twigOpacity = live ? .92 : seen ? .58 : .25
-    const twigColor = live ? f.backing : '#a9c4b4'
-    p.path(node.twig, f.muted, .85, { opacity: .14 })
-    p.path(node.twig, twigColor, live ? 1.75 : 1.1, { opacity: twigOpacity }, Math.max(.12, twigFrac))
+    const twigOpacity = live ? .94 : seen ? .56 : .22
+    const twigColor = live ? '#effcf5' : '#9ac2ad'
+    p.path(node.twig, f.muted, .85, { opacity: .13 })
+    if (live) {
+      p.path(node.twig, '#8ee8bb', 4.4 * f.unit, { opacity: .20 }, Math.max(.12, twigFrac))
+    }
+    p.path(node.twig, twigColor, live ? 1.75 : 1.05, { opacity: twigOpacity }, Math.max(.12, twigFrac))
 
-    // Junction & endpoint pinpoints
-    f.circle(node.junction[0], node.junction[1], (live ? 3.2 : 2.1) * f.unit, live ? f.backing : '#b9d4c4', { opacity: live ? .96 : .72 })
+    // Junction bead + ringed botanical endpoint halo
+    f.circle(node.junction[0], node.junction[1], (live ? 3.1 : 1.9) * f.unit, live ? '#eefcf5' : '#aed1be', { opacity: live ? .95 : .68 })
     if (twigFrac > .85) {
-      f.circle(node.endpoint[0], node.endpoint[1], (live ? 3.6 : 2.0) * f.unit, live ? f.backing : '#ddeae2', { opacity: live ? 1 : .78 })
+      if (live) {
+        p.path(ellipse(7.2 * f.unit, 7.2 * f.unit, 24, node.endpoint[0], node.endpoint[1]), '#d7fae7', 1.15, { opacity: .72 })
+        f.circle(node.endpoint[0], node.endpoint[1], 5.6 * f.unit, f.backing, { opacity: .24 })
+      }
+      f.circle(node.endpoint[0], node.endpoint[1], (live ? 3.2 : 2.1) * f.unit, live ? '#ffffff' : '#cfe5d8', { opacity: live ? 1 : .76 })
     }
     obstacles.push({ x: node.endpoint[0], y: node.endpoint[1], w: 12 * f.unit, h: 12 * f.unit })
 
@@ -490,20 +524,25 @@ export function layoutWebScene(
 
 function drawHubMotif(f: Frame, [cx, cy]: Point, r: number) {
   const { p } = f
-  // Central faceted weaver crest (body + inner highlight + 6 articulated geometric arms)
-  p.card(cx, cy, r * .62, r * .84, '#e6e8ef', { radius: r * .28, accent: '#ffffff', sheen: .72, opacity: .94 })
-  p.card(cx, cy - r * .36, r * .36, r * .36, '#f6f7fb', { radius: r * .18, opacity: .96 })
+  // Translucent drop-shadow beneath articulated pearl/bronze silk weaver crest
   const arms: Point[][] = [
-    [[cx - r * .22, cy - r * .24], [cx - r * .68, cy - r * .52], [cx - r * .92, cy - r * .20]],
-    [[cx - r * .26, cy - r * .04], [cx - r * .78, cy - r * .10], [cx - r * 1.02, cy + r * .30]],
-    [[cx - r * .22, cy + r * .16], [cx - r * .64, cy + r * .46], [cx - r * .76, cy + r * .92]],
-    [[cx + r * .22, cy - r * .24], [cx + r * .68, cy - r * .52], [cx + r * .92, cy - r * .20]],
-    [[cx + r * .26, cy - r * .04], [cx + r * .78, cy - r * .10], [cx + r * 1.02, cy + r * .30]],
-    [[cx + r * .22, cy + r * .16], [cx + r * .64, cy + r * .46], [cx + r * .76, cy + r * .92]],
+    [[cx - r * .18, cy - r * .20], [cx - r * .62, cy - r * .56], [cx - r * .94, cy - r * .26]],
+    [[cx - r * .22, cy - r * .02], [cx - r * .76, cy - r * .12], [cx - r * 1.04, cy + r * .26]],
+    [[cx - r * .18, cy + r * .14], [cx - r * .62, cy + r * .48], [cx - r * .78, cy + r * .94]],
+    [[cx + r * .18, cy - r * .20], [cx + r * .62, cy - r * .56], [cx + r * .94, cy - r * .26]],
+    [[cx + r * .22, cy - r * .02], [cx + r * .76, cy - r * .12], [cx + r * 1.04, cy + r * .26]],
+    [[cx + r * .18, cy + r * .14], [cx + r * .62, cy + r * .48], [cx + r * .78, cy + r * .94]],
   ]
   for (const arm of arms) {
-    p.path(arm, '#f2f4fa', Math.max(1.4, r * .065), { opacity: .88 })
+    const sh = arm.map(([ax, ay]): Point => [ax + r * .04, ay - r * .12])
+    p.path(sh, '#120804', Math.max(2.0, r * .11), { opacity: .28 })
+    p.path(arm, '#29180e', Math.max(1.8, r * .095), { opacity: .82 })
+    p.path(arm, '#efe2d4', Math.max(1.05, r * .055), { opacity: .92 })
   }
+  p.card(cx + r * .04, cy - r * .10, r * .58, r * .86, '#120804', { radius: r * .30, opacity: .28, border: 0 })
+  p.card(cx, cy + r * .04, r * .48, r * .76, '#ccb9a8', { radius: r * .26, accent: '#fff7ee', border: 1.0, sheen: .82, opacity: .94 })
+  p.card(cx, cy - r * .34, r * .28, r * .30, '#e9ddd0', { radius: r * .15, accent: '#42291c', border: .85, sheen: .60, opacity: .96 })
+  f.circle(cx, cy + r * .12, r * .14, '#fff9f2', { opacity: .55 })
 }
 
 export function web(f: Frame) {
@@ -529,23 +568,29 @@ export function web(f: Frame) {
     f.low,
   )
 
-  // Draw nonuniform radial spokes & concave web rings (no panel-wide rotation)
+  // Draw gossamer radial spokes & concave silk web rings with warm highlight readability
   for (const tip of layout.rays) {
-    p.path([layout.hub, tip], f.muted, .9, { opacity: .26 })
+    p.path([layout.hub, tip], '#dfd1c4', .95, { opacity: .30 })
   }
   layout.rings.forEach((ring, n) => {
-    p.path(ring, n === layout.rings.length - 1 ? '#d0c4bc' : f.muted, n ? .95 : .75, { opacity: .16 + n * .055 })
+    p.path(ring, n === layout.rings.length - 1 ? '#f2dfcc' : '#d8c5b4', n ? 1.05 : .80, { opacity: .20 + n * .065 })
   })
 
-  // Draw traversing active strand & knot anchors
+  // Draw traversing active strand & pearl/halo knot anchors
   layout.nodes.forEach((node, idx) => {
     const prevAnchor: Point = idx > 0 ? layout.nodes[idx - 1].knot : layout.hub
     const prog = node.live ? settle(f.advance(160, node.token.startMs)) : 1
     const bow = node.live ? (1 - prog) * (idx % 2 ? 1 : -1) * 14 * f.unit * f.motion : 0
     const strand = lineBetween(prevAnchor, node.knot, 12, bow)
-    p.path(strand, node.live ? f.backing : '#c9d7ee', node.live ? 2.1 : 1.05, { opacity: node.live ? .92 : .42 }, node.live ? Math.max(.22, prog) : 1)
-    if (node.live) f.circle(node.knot[0], node.knot[1], 7.5 * f.unit, f.backing, { opacity: .24 })
-    f.circle(node.knot[0], node.knot[1], (node.live ? 3.8 : 2.2) * f.unit, node.live ? f.backing : '#e4ebf8', { opacity: node.live ? 1 : .66 })
+    if (node.live) {
+      p.path(strand, f.backing, 4.4 * f.unit, { opacity: .22 }, Math.max(.22, prog))
+    }
+    p.path(strand, node.live ? '#fff1df' : '#dfd2c6', node.live ? 1.9 : 1.05, { opacity: node.live ? .95 : .46 }, node.live ? Math.max(.22, prog) : 1)
+    if (node.live) {
+      p.path(ellipse(7.8 * f.unit, 7.8 * f.unit, 24, node.knot[0], node.knot[1]), '#ffeccf', 1.15, { opacity: .78 })
+      f.circle(node.knot[0], node.knot[1], 7.0 * f.unit, f.backing, { opacity: .25 })
+    }
+    f.circle(node.knot[0], node.knot[1], (node.live ? 3.5 : 2.1) * f.unit, node.live ? '#ffffff' : '#efe3d6', { opacity: node.live ? 1 : .72 })
   })
 
   // Draw dominant sculptural hub above backdrop strands
@@ -705,14 +750,11 @@ export function constellation(f: Frame) {
     const mode = live ? f.backing : '#dfebff'
     const age = settle(f.advance(135, node.token.startMs))
 
-    if (live && !f.quiet) {
-      const flare = (7.5 + 9 * (1 - age) * f.motion) * f.unit
-      f.circle(node.x, node.y, flare, f.backing, { opacity: .13 })
-      p.path([[node.x - flare, node.y], [node.x + flare, node.y]], mode, .95, { opacity: .68 })
-      p.path([[node.x, node.y - flare], [node.x, node.y + flare]], mode, .9, { opacity: .68 })
-    }
-    const starR = (live ? 3.5 : cueAge === 0 ? 2.2 : 1.75) * f.unit
-    f.circle(node.x, node.y, starR, mode, { opacity: live ? 1 : seen ? (cueAge === 0 ? .84 : .58) : .36 })
+    const pulse = live && !f.quiet ? (1 + .22 * (1 - age) * f.motion) : 1
+    const starR = (live ? 6.8 : cueAge === 0 ? 4.4 : 3.4) * f.unit * pulse
+    const starOpacity = live ? 1 : seen ? (cueAge === 0 ? .88 : .60) : .38
+    const orbitR = live ? (11.5 + 3.0 * (1 - age) * f.motion) * f.unit : 0
+    drawStar4Pt(f, node.x, node.y, starR, live ? '#eef3ff' : mode, starOpacity, live, orbitR)
     obstacles.push({ x: node.x, y: node.y, w: 12 * f.unit, h: 12 * f.unit })
 
     // Fade history labels earlier than star dots (Verci-style persistent star chart)
@@ -832,12 +874,22 @@ export function mapJourney(f: Frame) {
     p.path(road, '#bbc2ac', col % 3 ? 1 : 1.5, { clip, opacity: col % 3 ? .26 : .39 })
   }
 
+  if (!f.low) {
+    for (let bx = Math.floor(xmin / 94); bx <= Math.ceil(xmax / 94); bx++) {
+      for (let by = Math.floor(yMin / 68); by <= Math.ceil(yMax / 68); by++) {
+        const [sx, sy] = project([bx * 94 + 26, by * 68 + 18])
+        if (Math.abs(sx) < half - 18 * f.unit && sy > clip[0] + 10 && sy < clip[1] - 10) {
+          p.card(sx, sy, 28 * f.unit, 16 * f.unit, '#18373e', { clip, radius: 2, opacity: .34, border: 0 })
+        }
+      }
+    }
+  }
   const water = Array.from({ length: 44 }, (_, k): Point => {
     const x = mix(xmin, xmax, k / 43)
     return project([x, -45 + Math.sin(x * .009) * 38 + Math.cos(x * .017) * 8])
   })
-  p.path(water, '#527f83', 18 * f.unit, { clip, opacity: .65 })
-  p.path(water, '#81a9a2', 1.2, { clip, opacity: .52 })
+  p.path(water, '#4e7c82', 20 * f.unit, { clip, opacity: .66 })
+  p.path(water, '#87b2ab', 1.3, { clip, opacity: .58 })
 
   const through = Math.min(6, cue.index + 2)
   for (let j = through; j >= 0; j--) {
@@ -848,7 +900,10 @@ export function mapJourney(f: Frame) {
     p.path(fullScreen, '#101c2c', index < cue.index ? 4.8 : 1.5, { clip, opacity: .78 })
     if (index === cue.index - 1 && activeSlice) {
       const traveledScreen = activeSlice.points.map(project).map(clampScreen)
-      if (traveledScreen.length >= 2) p.path(traveledScreen, '#f0bb86', 2.45, { clip, opacity: .98 })
+      if (traveledScreen.length >= 2) {
+        p.path(traveledScreen, '#f0a968', 5.4 * f.unit, { clip, opacity: .24 })
+        p.path(traveledScreen, '#f4c694', 2.45, { clip, opacity: .98 })
+      }
       p.path(fullScreen, '#aad1b7', 1.1, { clip, opacity: .28 })
     } else {
       p.path(fullScreen, index < cue.index ? '#f0bb86' : '#aad1b7', index < cue.index ? 2.2 : 1.1, {

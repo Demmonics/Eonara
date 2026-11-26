@@ -1,6 +1,7 @@
 {
-  "name": "lyricmotion",
+  "name": "eonara",
   "version": "0.3.0",
+  "description": "Eonara — The Art of Sound",
   "private": true,
   "type": "module",
   "scripts": {
@@ -23,6 +24,5 @@
     "typescript": "^5.9.3",
     "vite": "^8.3.8",
     "vitest": "^4.1.0"
-  },
-  "license": "MIT OR Apache-2.0"
+  }
 }

@@ -33,10 +33,20 @@ const glyphFragment = `
   uniform float uOpacity;
   uniform float uReveal;
   uniform float uSoftness;
+  uniform float uBlurY;
   varying vec2 vUv;
   varying vec2 vScreen;
   void main() {
     vec4 ink = texture2D(uMap, vUv);
+    if (uBlurY > .005) {
+      float dy = uTexel.y * (uBlurY * 5.4);
+      vec4 streak = ink * .30
+        + texture2D(uMap, clamp(vUv + vec2(0., dy * .55), 0., 1.)) * .21
+        + texture2D(uMap, clamp(vUv - vec2(0., dy * .55), 0., 1.)) * .21
+        + texture2D(uMap, clamp(vUv + vec2(0., dy), 0., 1.)) * .14
+        + texture2D(uMap, clamp(vUv - vec2(0., dy), 0., 1.)) * .14;
+      ink = mix(ink, streak, clamp(uBlurY, 0., 1.));
+    }
     if (uSoftness > .01) {
       vec2 off = uTexel * (uSoftness * 2.2);
       vec4 blur = ink * .36
@@ -63,6 +73,7 @@ const cardFragment = `
   uniform vec3 uInk;
   uniform vec3 uAccent;
   uniform vec4 uCard;
+  uniform vec2 uCardExtra;
   uniform vec2 uSize;
   uniform vec2 uClip;
   uniform float uOpacity;
@@ -70,9 +81,21 @@ const cardFragment = `
   varying vec2 vScreen;
   void main() {
     float radius = min(uCard.x, .5*min(uSize.x,uSize.y));
-    vec2 p = abs(vUv-.5)*uSize - (.5*uSize-radius-1.2);
-    float sdf = length(max(p,0.)) + min(max(p.x,p.y),0.) - radius;
-    float aa = clamp(fwidth(sdf),.55,1.4);
+    float sdf;
+    if (abs(uCardExtra.x) > .5) {
+      vec2 q = vec2(uCardExtra.x > 0. ? vUv.x : 1. - vUv.x, vUv.y);
+      float dOuter = length(q - vec2(-.08, .90)) - 1.24;
+      float dCut = length(q - vec2(1.04, .84)) - .66;
+      float floorY = .10 + .08 * pow(clamp(1. - q.x, 0., 1.), 1.5);
+      float dFloor = floorY - q.y;
+      float dRoot = .05 - q.x;
+      float normSdf = max(max(max(dOuter, -dCut), dFloor), dRoot);
+      sdf = normSdf * min(uSize.x, uSize.y);
+    } else {
+      vec2 p = abs(vUv-.5)*uSize - (.5*uSize-radius-1.2);
+      sdf = length(max(p,0.)) + min(max(p.x,p.y),0.) - radius;
+    }
+    float aa = clamp(fwidth(sdf),.55,1.4) + uCardExtra.y * 5.2 * abs(vUv.y - .5);
     float shape = 1.-smoothstep(-aa,aa,sdf);
     float edge = (1.-smoothstep(-uCard.y-aa,-uCard.y+aa,sdf)) * shape;
     edge = shape-edge;
@@ -122,6 +145,7 @@ export interface GlyphPaint extends Paint {
   mark?: readonly [number, number]
   reveal?: number
   softness?: number
+  blurY?: number
   lens?: LensField
   lensMode?: 'radial' | 'cylinder'
 }
@@ -130,6 +154,7 @@ export interface CardPaint extends GlyphPaint {
   border?: number
   fill?: number
   sheen?: number
+  tail?: -1 | 0 | 1
 }
 export type Point = readonly [number, number]
 
@@ -249,6 +274,7 @@ export class Painter {
         uMark: { value: new THREE.Vector2() },
         uReveal: { value: 1 },
         uSoftness: { value: 0 },
+        uBlurY: { value: 0 },
         uTexel: { value: new THREE.Vector2(1 / 128, 1 / 64) },
       }))))
     mesh.geometry = p.lens?.[2] ? this.mesh : this.quad
@@ -259,8 +285,10 @@ export class Painter {
     u.uMark.value.set(p.mark?.[0] ?? 2, p.mark?.[1] ?? 2)
     u.uReveal.value = p.reveal ?? 1
     const softness = clamp(p.softness ?? 0)
+    const blurY = clamp(p.blurY ?? 0)
     u.uSoftness.value = softness
-    if (softness > .01) {
+    u.uBlurY.value = blurY
+    if (softness > .01 || blurY > .005) {
       const img = run.texture?.image as { width?: number; height?: number } | undefined
       u.uTexel.value.set(1 / Math.max(1, img?.width || run.width), 1 / Math.max(1, img?.height || run.height))
     }
@@ -270,12 +298,18 @@ export class Painter {
     if ((p.opacity ?? 1) <= .002 || w < 1 || h < 1) return
     const i = this.c++
     const mesh = this.cards[i] ?? (this.cards[i] = this.attach(new THREE.Mesh(this.quad,
-      material(quadVertex, cardFragment, { ...makeUniforms(), uSize: { value: new THREE.Vector2() }, uCard: { value: new THREE.Vector4() } }))))
+      material(quadVertex, cardFragment, {
+        ...makeUniforms(),
+        uSize: { value: new THREE.Vector2() },
+        uCard: { value: new THREE.Vector4() },
+        uCardExtra: { value: new THREE.Vector2() },
+      }))))
     mesh.geometry = p.lens?.[2] ? this.mesh : this.quad
     this.set(mesh, x, y, w + 3, h + 3, color, p)
     const u = mesh.material.uniforms
     u.uSize.value.set(w + 3, h + 3)
     u.uCard.value.set(p.radius ?? 12, Math.max(.05, p.border ?? 0), p.fill ?? 1, p.sheen ?? 0)
+    u.uCardExtra.value.set(p.tail ?? 0, clamp(p.blurY ?? 0))
   }
 
   /** Width in scene pixels. Partial paths are capped by arc length, not segment count. */

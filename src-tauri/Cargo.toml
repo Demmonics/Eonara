@@ -1,8 +1,8 @@
 [package]
-name = "lyricmotion"
+name = "eonara"
 version = "0.3.0"
+description = "Eonara — The Art of Sound"
 edition = "2021"
-license = "MIT OR Apache-2.0"
 build = "build.rs"
 
 [build-dependencies]

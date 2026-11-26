@@ -17,7 +17,7 @@ export function lens(f: Frame, visual = false) {
   const offset = f.quiet ? 0 : lensRail(f.time, mid.startMs, railPrev, railNext, following?.startMs, f.speed)
 
   const space = Math.min(f.em(92), f.h * .178)
-  const size = Math.min(f.em(72), space * .78)
+  const size = Math.min(f.em(78), space * .85)
   const max = f.lane * .75
   const strength = (f.quiet ? .82 : clamp(.84 + f.motion * .12, .84, .96)) * clamp(f.w / 680, .62, 1)
   const field: LensField = [Math.min(max * .62, 2.2 * space), space * 1.06, strength, 0, f.y]
@@ -40,7 +40,7 @@ export function lens(f: Frame, visual = false) {
     if (visible < .003) continue
 
     const y = f.y + d * space
-    const scale = mix(.78, 1.04, focus)
+    const scale = mix(.84, 1.04, focus)
     const shape = visual ? lookupIcon(entry.token.text) : undefined
     const iconSize = shape ? size * mix(.44, .52, focus) * scale : 0
     const side = shape ? ((hash(entry.token.text) & 1) ? 1 : -1) : 0
@@ -48,7 +48,7 @@ export function lens(f: Frame, visual = false) {
     const run = f.run(entry.token.text, size, f.heavy, max - gutter)
     const x = -side * iconSize * .55
 
-    const historyFade = d > .48 ? mix(.82, .44, smooth((d - .52) / .68)) : mix(.76, .98, focus)
+    const historyFade = d > .48 ? mix(.88, .56, smooth((d - .52) / .68)) : mix(.86, .98, focus)
     const entryFade = i === 0 && hasPrev && !older ? mix(.55, 1, arrive) : 1
     const opacity = clamp(visible * entryFade * (live ? .98 : historyFade))
     if (opacity <= .005) continue

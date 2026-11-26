@@ -57,7 +57,7 @@ describe('LRCLIB client', () => {
     const [url, init] = response.mock.calls[0]!
     expect(String(url)).toContain('/api/get?track_name=A+Small+Light')
     expect(String(url)).toContain('duration=180')
-    expect(new Headers(init?.headers).get('X-User-Agent')).toContain('LyricMotion')
+    expect(new Headers(init?.headers).get('X-User-Agent')).toContain('Eonara')
     first.lines[0]!.text = 'Changed'
     vi.resetModules()
     const fresh = await import('./index')

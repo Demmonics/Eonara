@@ -68,7 +68,7 @@ def run(args, results):
         page.on("console", lambda message: console_errors.append(message.text)
                 if message.type == "error" else None)
         page.goto(args.url, wait_until="domcontentloaded")
-        expect(page.get_by_text("LyricMotion", exact=True)).to_be_visible()
+        expect(page.get_by_text("Eonara", exact=True)).to_be_visible()
         expect(page.get_by_role("button", name="Demo", exact=True)).to_have_attribute("aria-pressed", "true")
         expect(page.locator(".stage canvas").first).to_be_visible()
         expect(page.locator(".track-caption").first).to_contain_text("Original demo")

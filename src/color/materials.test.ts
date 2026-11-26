@@ -3,6 +3,11 @@ import { composite, deriveMaterials, materialOpacity, readableInk } from './mate
 import { contrast } from './oklab';
 import { demoStylePalette, manualPalette } from './palette';
 
+const ALL_STYLES = [
+  'ship', 'fisheye', 'visual', 'fisheye-visual', 'codestyle', 'codestyle-visual',
+  'branches', 'web', 'constellation', 'message-thread', 'payments', 'map-journey', 'notifications',
+];
+
 describe('palette materials', () => {
   it('keeps readable subdued labels and overlays across bright, dark, and busy backdrops', () => {
     const covers = ['#fcf0ef', '#fc6598', '#392bec', '#17ba62', '#050505', '#7e7f88'];
@@ -20,11 +25,13 @@ describe('palette materials', () => {
     }
   });
 
-  it('maintains WCAG >=4.5:1 across all curated demo style grades', () => {
-    for (const id of ['ship', 'fisheye', 'visual', 'codestyle', 'branches', 'web', 'constellation', 'payments', 'notifications']) {
+  it('maintains WCAG >=4.5:1 across all 13 curated demo style grades', () => {
+    for (const id of ALL_STYLES) {
       const pal = demoStylePalette(id);
       const m = deriveMaterials(pal, .55, .64);
       expect(contrast(m.muted, composite(m.toolbar, '#ffffff', m.opacity))).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(m.muted, m.gallery)).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(pal.foreground, m.cardBackdrop)).toBeGreaterThanOrEqual(7);
       expect(contrast(m.accentInk, pal.accent)).toBeGreaterThanOrEqual(4.5);
     }
   });

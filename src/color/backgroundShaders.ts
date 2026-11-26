@@ -28,6 +28,11 @@ export const backgroundFragment = /* glsl */ `
     q += dot(q, q.yzx + 33.33);
     return fract((q.x + q.y) * q.z);
   }
+  float hash3(vec2 p, float z) {
+    vec3 q = fract(vec3(p.x, p.y, z) * vec3(0.1031, 0.1030, 0.0973));
+    q += dot(q, q.yxz + 33.33);
+    return fract((q.x + q.y) * q.z);
+  }
   float valueNoise(vec2 p) {
     vec2 i = floor(p);
     vec2 f = fract(p);
@@ -38,89 +43,132 @@ export const backgroundFragment = /* glsl */ `
     float d = hash(i + vec2(1.0, 1.0));
     return mix(mix(a, b, u.x), mix(c, d, u.x), u.y) - 0.5;
   }
-  // Spatially correlated FHD/DPR-aware optical film grain with slow decorrelation
-  float opticalGrain(vec2 uv, vec2 sizeCss, float dpr, float t) {
-    float fhdScale = clamp(min(sizeCss.x, sizeCss.y) / 720.0, 0.72, 1.5);
-    float effDpr = clamp(dpr, 1.0, 2.5);
-    vec2 grainUv = (uv * sizeCss) / (1.35 * fhdScale);
-    vec2 microUv = (uv * sizeCss * effDpr) * 0.42;
-    float slice = floor(t * 3.2);
-    float blend = smoothstep(0.0, 1.0, fract(t * 3.2));
-    float g0 = valueNoise(grainUv * 0.78 + vec2(slice * 17.3, slice * 9.7)) * 0.62
-             + valueNoise(grainUv * 1.54 - vec2(slice * 11.1, slice * 23.4)) * 0.26
-             + valueNoise(microUv + vec2(slice * 7.1, slice * 13.7)) * 0.12;
-    float nSlice = slice + 1.0;
-    float g1 = valueNoise(grainUv * 0.78 + vec2(nSlice * 17.3, nSlice * 9.7)) * 0.62
-             + valueNoise(grainUv * 1.54 - vec2(nSlice * 11.1, nSlice * 23.4)) * 0.26
-             + valueNoise(microUv + vec2(nSlice * 7.1, nSlice * 13.7)) * 0.12;
-    return clamp(mix(g0, g1, blend), -0.5, 0.5);
+  vec3 linearToSrgb3(vec3 c) {
+    vec3 safe = max(c, vec3(0.0));
+    vec3 lo = safe * 12.92;
+    vec3 hi = 1.055 * pow(safe, vec3(1.0 / 2.4)) - 0.055;
+    return mix(lo, hi, step(vec3(0.0031308), safe));
   }
+  vec3 srgbToLinear3(vec3 c) {
+    vec3 safe = max(c, vec3(0.0));
+    vec3 lo = safe / 12.92;
+    vec3 hi = pow((safe + 0.055) / 1.055, vec3(2.4));
+    return mix(lo, hi, step(vec3(0.04045), safe));
+  }
+
+  float crystalCluster(vec2 fragPx, float pxScale, vec2 g1, float seed) {
+    float c0 = (hash3(g1, seed) + hash3(g1 + vec2(31.0, 79.0), seed) - 1.0) * 0.74;
+    float c1 = (hash3(floor(fragPx / max(1.0, pxScale * 0.65)) + vec2(7.0, 13.0), seed) - 0.5) * 0.44;
+    float sm = valueNoise(fragPx / (pxScale * 1.45) + vec2(seed * 3.1 + 4.3, seed * 1.7)) * 0.28;
+    float nb = (hash3(g1 + vec2(1.0, 0.0), seed) + hash3(g1 + vec2(0.0, 1.0), seed)) - 1.0;
+    return (c0 + c1 + sm) - nb * 0.14;
+  }
+
+  // DPR-calibrated photographic silver-halide emulsion noise with analytical variance-preserving slow drift
+  vec3 opticalEmulsionGrain(vec2 fragPx, float dpr, float t) {
+    float pxScale = 1.32 * mix(1.0, 1.42, smoothstep(1.0, 2.0, dpr));
+    vec2 g1 = floor(fragPx / pxScale);
+    float phase = t * 1.15;
+    float s0 = floor(phase);
+    float s1 = s0 + 1.0;
+    float blend = smoothstep(0.0, 1.0, fract(phase));
+    float varNorm = inversesqrt(max(0.5, 1.0 - 2.0 * blend * (1.0 - blend)));
+
+    float n0 = crystalCluster(fragPx, pxScale, g1, s0);
+    float n1 = crystalCluster(fragPx, pxScale, g1, s1);
+    float gLum = mix(n0, n1, blend) * varNorm;
+
+    float c0 = (hash3(g1 + vec2(17.0, 41.0), s0 + 23.0) - 0.5) * 0.20;
+    float c1 = (hash3(g1 + vec2(17.0, 41.0), s1 + 23.0) - 0.5) * 0.20;
+    float dye = mix(c0, c1, blend) * varNorm;
+    return vec3(gLum + dye, gLum - dye * 0.35, gLum - dye * 0.65);
+  }
+
   float lightPool(vec2 p, vec2 center, vec2 squash, float scale) {
     vec2 d = (p - center) * squash;
     return exp(-dot(d, d) * scale);
   }
-  vec3 atmosphere(vec2 p, float t) {
-    // Asymmetric broad color fields: cooler left shadow field vs warmer/brighter upper-right field + lower shadow veil
-    vec2 a = vec2(-0.56 + 0.12 * sin(t * 0.42), 0.24 + 0.07 * cos(t * 0.54));
-    vec2 b = vec2(0.58 + 0.11 * cos(t * 0.38), 0.34 + 0.08 * sin(t * 0.62));
-    vec2 c = vec2(0.45 + 0.08 * sin(t * 0.27), 0.54 + 0.06 * cos(t * 0.34));
-    float dusk = lightPool(p, a, vec2(0.86, 1.22), 1.25);
-    float tide = lightPool(p, b, vec2(1.05, 0.96), 1.48);
-    float highlight = lightPool(p, c, vec2(0.95, 1.55), 2.75);
-    float lowerShadow = mix(0.46, 1.0, smoothstep(-0.92, 0.38, p.y));
-    return (uPrimary * (0.54 * dusk) + uSecondary * (0.48 * tide) + uAccent * (0.16 * highlight)) * lowerShadow;
+
+  vec3 perceptualWarmMix(vec3 coolLin, vec3 warmLin, float weight) {
+    float w = clamp(weight, 0.0, 0.82);
+    vec3 coolS = linearToSrgb3(coolLin);
+    vec3 warmS = linearToSrgb3(warmLin);
+    vec3 blended = srgbToLinear3(mix(coolS, warmS, w));
+    float midArc = 4.0 * w * (1.0 - w);
+    float lumB = dot(blended, vec3(0.2126, 0.7152, 0.0722));
+    return max(vec3(0.0), mix(vec3(lumB), blended, 1.0 + 0.30 * midArc));
   }
+
+  vec3 atmosphere(vec2 p, float t) {
+    // Broad asymmetric studio fields: deep left depth, vivid mid sweep, warm/cool right rim, seamless bottom shadow
+    vec2 a = vec2(-0.78 + 0.09 * sin(t * 0.38), 0.06 + 0.06 * cos(t * 0.48));
+    vec2 b = vec2(-0.02 + 0.10 * cos(t * 0.34), 0.22 + 0.07 * sin(t * 0.56));
+    vec2 c = vec2(1.14 + 0.06 * sin(t * 0.26), 0.16 + 0.06 * cos(t * 0.32));
+    float dusk = lightPool(p, a, vec2(0.68, 0.94), 0.90);
+    float tide = lightPool(p, b, vec2(0.76, 0.92), 1.08);
+    float highlight = lightPool(p, c, vec2(0.88, 1.02), 1.52);
+    float lowerFeather = mix(0.24, 1.0, smoothstep(-1.04, -0.04, p.y));
+    vec3 deepGround = uBackground * mix(0.42, 0.96, smoothstep(-1.05, 0.28, p.y));
+    vec3 coolLin = deepGround + (uPrimary * (0.76 * dusk) + uSecondary * (0.86 * tide)) * lowerFeather;
+    vec3 warmLin = deepGround * 0.50 + uAccent * (0.58 * lowerFeather);
+    return perceptualWarmMix(coolLin, warmLin, highlight * 0.78);
+  }
+
   vec3 glass(vec2 p, float t) {
     vec2 flow = p + vec2(
-      0.17 * sin(p.y * 3.1 + t * 0.71) + 0.06 * sin(p.x * 5.1 - t * 0.23),
-      0.12 * cos(p.x * 2.7 - t * 0.58)
+      0.16 * sin(p.y * 2.9 + t * 0.68) + 0.06 * sin(p.x * 4.8 - t * 0.23),
+      0.11 * cos(p.x * 2.5 - t * 0.54)
     );
-    float fold = flow.y + 0.30 * sin(2.2 * flow.x + t * 0.65);
-    float fold2 = flow.y - 0.24 + 0.23 * cos(3.0 * flow.x - t * 0.43);
-    float body = exp(-11.0 * fold * fold);
-    float ridge = exp(-95.0 * (fold - 0.15) * (fold - 0.15));
-    float rim = exp(-60.0 * fold2 * fold2) * smoothstep(-0.35, 0.65, flow.x);
-    float matte = lightPool(flow, vec2(-0.62, 0.04), vec2(0.95, 1.05), 1.22);
-    float lowerShadow = mix(0.55, 1.0, smoothstep(-0.92, 0.34, p.y));
-    return (uPrimary * (matte * 0.28 + body * 0.26)
-      + uSecondary * (0.28 * body * smoothstep(-0.85, 0.72, flow.x))
-      + uAccent * (ridge * 0.085 + rim * 0.056) * (0.35 + 1.05 * uGlass)) * lowerShadow;
+    float fold = flow.y + 0.30 * sin(2.1 * flow.x + t * 0.62);
+    float fold2 = flow.y - 0.26 + 0.24 * cos(2.9 * flow.x - t * 0.42);
+    float body = exp(-8.5 * fold * fold);
+    float ridge = exp(-68.0 * (fold - 0.14) * (fold - 0.14));
+    float rim = exp(-44.0 * fold2 * fold2) * smoothstep(-0.45, 0.72, flow.x);
+    float matte = lightPool(flow, vec2(-0.56, 0.08), vec2(0.84, 1.0), 1.05);
+    float glow = lightPool(flow, vec2(0.46, 0.24), vec2(0.82, 0.96), 1.02);
+    float lowerFeather = mix(0.32, 1.0, smoothstep(-1.08, -0.14, p.y));
+    vec3 deepGround = uBackground * mix(0.46, 0.96, smoothstep(-1.06, -0.20, p.y));
+    vec3 baseField = deepGround + (uPrimary * (matte * 0.52 + body * 0.40)
+      + uSecondary * (glow * 0.64 + body * 0.42 * smoothstep(-0.78, 0.78, flow.x))) * lowerFeather;
+    vec3 specularWarm = deepGround * 0.5 + uAccent * (0.52 * (0.55 + 0.85 * uGlass)) * lowerFeather;
+    return perceptualWarmMix(baseField, specularWarm, (ridge * 0.38 + rim * 0.26));
   }
+
   vec3 meshGradient(vec2 p, float t) {
-    vec2 a = vec2(-0.56 + 0.14 * sin(t * 0.60), -0.32 + 0.11 * cos(t * 0.71));
-    vec2 b = vec2(0.54 + 0.14 * cos(t * 0.51), 0.36 + 0.12 * sin(t * 0.64));
-    vec2 c = vec2(-0.16 + 0.20 * sin(t * 0.37), 0.56 + 0.10 * cos(t * 0.57));
-    float wa = lightPool(p, a, vec2(1.0, 1.0), 2.15);
-    float wb = lightPool(p, b, vec2(0.82, 1.0), 2.35);
-    float wc = lightPool(p, c, vec2(1.0, 1.25), 2.8);
-    // Normalize the local colour mix separately from the falloff so each
-    // lobe keeps its character where it dominates the field.
-    float density = wa + wb + wc;
-    vec3 field = (uPrimary * wa + uSecondary * wb + uAccent * wc) / max(0.001, density);
-    float lowerShadow = mix(0.52, 1.0, smoothstep(-0.92, 0.35, p.y));
-    return field * (0.38 * smoothstep(0.02, 0.92, density)) * lowerShadow;
+    vec2 a = vec2(-0.58 + 0.14 * sin(t * 0.56), -0.26 + 0.11 * cos(t * 0.66));
+    vec2 b = vec2(0.50 + 0.14 * cos(t * 0.49), 0.34 + 0.12 * sin(t * 0.60));
+    vec2 c = vec2(-0.14 + 0.18 * sin(t * 0.35), 0.52 + 0.10 * cos(t * 0.53));
+    vec2 d = vec2(0.78 + 0.10 * cos(t * 0.31), -0.34 + 0.09 * sin(t * 0.41));
+    float wa = lightPool(p, a, vec2(0.92, 0.95), 1.55);
+    float wb = lightPool(p, b, vec2(0.80, 0.92), 1.65);
+    float wc = lightPool(p, c, vec2(0.96, 1.15), 2.05);
+    float wd = lightPool(p, d, vec2(0.95, 1.05), 2.00);
+    float density = wa + wb + wc + wd;
+    vec3 coolField = (uPrimary * wa + uSecondary * wb + mix(uPrimary, uSecondary, 0.45) * wd) / max(0.001, wa + wb + wd);
+    float lowerFeather = mix(0.36, 1.0, smoothstep(-1.08, -0.14, p.y));
+    vec3 baseWash = uBackground * 0.72 + coolField * (0.64 * smoothstep(0.02, 0.88, density)) * lowerFeather;
+    vec3 warmWash = uBackground * 0.55 + uAccent * (0.58 * lowerFeather);
+    return perceptualWarmMix(baseWash, warmWash, clamp(wc * 0.65, 0.0, 0.65));
   }
+
   vec3 zenGradient(vec2 p, float t, float ratio) {
+    float lowerFeather = mix(0.38, 1.0, smoothstep(-1.08, -0.14, p.y));
     if (uZenCount < 0.5) {
-      // Multi-stop automatic harmonic pools inspired by Zen Browser ZenGradientGenerator
-      vec2 p1 = vec2(-0.50 + 0.12 * sin(t * 0.32), 0.35 + 0.08 * cos(t * 0.41));
-      vec2 p2 = vec2(0.56 + 0.10 * cos(t * 0.28), 0.28 + 0.09 * sin(t * 0.35));
-      vec2 p3 = vec2(-0.14 + 0.18 * sin(t * 0.21), -0.44 + 0.07 * cos(t * 0.29));
-      vec2 p4 = vec2(0.42 + 0.14 * cos(t * 0.39), 0.54 + 0.10 * sin(t * 0.44));
+      vec2 p1 = vec2(-0.52 + 0.12 * sin(t * 0.32), 0.30 + 0.08 * cos(t * 0.41));
+      vec2 p2 = vec2(0.54 + 0.10 * cos(t * 0.28), 0.24 + 0.09 * sin(t * 0.35));
+      vec2 p3 = vec2(-0.14 + 0.18 * sin(t * 0.21), -0.40 + 0.07 * cos(t * 0.29));
+      vec2 p4 = vec2(0.46 + 0.14 * cos(t * 0.39), 0.50 + 0.10 * sin(t * 0.44));
 
-      float w1 = lightPool(p, p1, vec2(1.0, 1.22), 1.55);
-      float w2 = lightPool(p, p2, vec2(1.12, 0.95), 1.72);
-      float w3 = lightPool(p, p3, vec2(0.9, 1.3), 2.15);
-      float w4 = lightPool(p, p4, vec2(1.15, 1.15), 2.45);
+      float w1 = lightPool(p, p1, vec2(0.92, 1.10), 1.25);
+      float w2 = lightPool(p, p2, vec2(1.02, 0.92), 1.38);
+      float w3 = lightPool(p, p3, vec2(0.86, 1.18), 1.72);
+      float w4 = lightPool(p, p4, vec2(1.05, 1.08), 1.95);
 
-      float lowerShadow = mix(0.52, 1.0, smoothstep(-0.92, 0.36, p.y));
-      vec3 col = uPrimary * (0.48 * w1) + uSecondary * (0.42 * w2) +
-                 mix(uPrimary, uSecondary, 0.5) * (0.24 * w3) +
-                 uAccent * (0.18 * w4);
-      return col * lowerShadow;
+      vec3 coolCol = uBackground * 0.78 + (uPrimary * (0.62 * w1) + uSecondary * (0.66 * w2) + mix(uPrimary, uSecondary, 0.5) * (0.36 * w3)) * lowerFeather;
+      vec3 warmCol = uBackground * 0.50 + uAccent * (0.50 * lowerFeather);
+      return perceptualWarmMix(coolCol, warmCol, clamp(w4 * 0.55, 0.0, 0.55));
     }
-    // Interactive user-defined focal points
-    vec3 acc = vec3(0.0);
+    vec3 acc = uBackground * 0.58;
     float scaleX = clamp(ratio, 0.67, 1.7);
     float rotationCos = cos(uZenRotation), rotationSin = sin(uZenRotation);
     int count = int(min(uZenCount, 6.0));
@@ -131,27 +179,24 @@ export const backgroundFragment = /* glsl */ `
       vec2 basePos = (mat2(rotationCos, -rotationSin, rotationSin, rotationCos) * anchor) * vec2(scaleX, 1.0);
       float fi = float(i);
       vec2 animPos = basePos + vec2(0.05 * sin(t * 0.32 + fi * 1.57), 0.04 * cos(t * 0.26 + fi * 1.23));
-      float spread = 3.4 / max(0.5, pt.z);
+      float spread = 2.8 / max(0.5, pt.z);
       float intensity = pt.w;
       float pool = exp(-dot(p - animPos, p - animPos) * spread);
-      vec3 ptCol = uZenColors[i] * (pool * intensity * 0.55);
+      vec3 ptCol = uZenColors[i] * (pool * intensity * 0.72);
       if (uZenBlend > 0.5 && uZenBlend < 1.5) {
-        // Screen blend
         acc = vec3(1.0) - (vec3(1.0) - acc) * (vec3(1.0) - min(vec3(1.0), ptCol));
       } else if (uZenBlend > 1.5 && uZenBlend < 2.5) {
-        // Soft-light layering after the first visible pool; black is not the base layer.
-        if (i == 0) acc = ptCol;
-        else acc = mix(acc, vec3(1.0) - (vec3(1.0) - acc) * (vec3(1.0) - min(vec3(1.0), ptCol)), 0.64);
+        if (i == 0) acc = max(acc, ptCol);
+        else acc = mix(acc, vec3(1.0) - (vec3(1.0) - acc) * (vec3(1.0) - min(vec3(1.0), ptCol)), 0.68);
       } else if (uZenBlend > 2.5) {
-        // Lighten
         acc = max(acc, ptCol);
       } else {
-        // Additive
         acc += ptCol;
       }
     }
-    return acc;
+    return acc * mix(0.66, 1.0, smoothstep(-1.12, -0.20, p.y));
   }
+
   vec4 blurredArtwork(vec2 uv, float t) {
     vec2 q = (uv - 0.5) * uArtCover * 0.85 + 0.5;
     q += vec2(0.025 * sin(t * 0.35), 0.02 * (cos(t * 0.43) - 1.0));
@@ -178,39 +223,54 @@ export const backgroundFragment = /* glsl */ `
     } else if (uMode < 1.5) {
       color = glass(p, uTime);
     } else if (uMode < 2.5) {
-      color = atmosphere(p, uTime) * 0.55;
+      color = atmosphere(p, uTime) * 0.84;
       if (uArtWeight > 0.001) {
         vec4 art = blurredArtwork(vUv, uTime);
-        color = color * (1.0 - uArtWeight * art.a) + art.rgb * (uArtWeight * 0.34);
+        float blendW = uArtWeight * art.a * 0.72;
+        color = mix(color, max(color * 0.48, art.rgb * 0.54), blendW);
       }
     } else if (uMode < 3.5) {
       color = meshGradient(p, uTime);
     } else if (uMode < 4.5) {
       color = zenGradient(p, uTime, ratio);
     } else if (uMode < 5.5) {
-      color = uPrimary * (0.095 * lightPool(p, vec2(-0.18, -0.22), vec2(0.8, 0.9), 0.95));
+      float sweep = lightPool(p, vec2(0.38, 0.26), vec2(0.75, 0.92), 0.95);
+      color = uBackground * 0.68
+            + uPrimary * (0.28 * lightPool(p, vec2(-0.32, 0.05), vec2(0.75, 0.95), 0.92))
+            + uSecondary * (0.22 * sweep);
     } else {
-      color = mix(uPrimary, uSecondary, smoothstep(-0.9, 0.9, p.x - p.y * 0.35)) * 0.32;
-      color += uAccent * (0.16 * lightPool(p, vec2(0.62, 0.46), vec2(0.90, 1.25), 2.75));
+      float diag = smoothstep(-0.95, 0.95, p.x * 0.85 + p.y * 0.25);
+      vec3 baseDiag = uBackground * 0.40 + mix(uPrimary * 0.56, uSecondary * 0.68, diag);
+      vec3 rimWarm = uBackground * 0.40 + uAccent * 0.52;
+      color = perceptualWarmMix(baseDiag, rimWarm, 0.45 * lightPool(p, vec2(0.86, 0.24), vec2(0.88, 1.15), 1.65));
     }
-    float radial = smoothstep(0.25, 1.7, length(p));
-    float centerShade = 1.0 - (0.10 + 0.16 * uContrast) * exp(-6.5 * p.x * p.x);
-    vec3 linear = uBackground + color * (uIntensity * uBrightness * (0.42 + 0.58 * uTint)
-      * centerShade * (1.0 - 0.38 * uVignette * radial));
+
+    float radial = smoothstep(0.48, 1.94, length(p));
+    float vignetteFactor = 1.0 - 0.22 * uVignette * radial;
+    float contrastCurve = mix(0.92, 1.08, uContrast);
+    float tintLustre = mix(0.94, 1.06, uTint);
+    vec3 linear = uBackground * 0.22 + color * (uIntensity * uBrightness * contrastCurve * tintLustre * vignetteFactor);
     vec3 lumWeights = vec3(0.2126, 0.7152, 0.0722);
     linear = mix(vec3(dot(linear, lumWeights)), linear, uSaturation);
-    linear *= 1.0 - 0.36 * uVeil;
-    // Bounded spatially correlated optical film grain scaled safely to keep luma residual silky & shimmer-free
-    float lumBase = dot(linear, lumWeights);
-    float grain = opticalGrain(vUv, uSize, uDpr, uTime);
-    float grainScale = uGrain * (0.015 + 0.044 * sqrt(max(lumBase, 0.005)));
-    linear = max(vec3(0.0), linear + grain * grainScale);
-    // Soft perceptual headroom rolloff instead of harsh crushed clamp
+    linear *= 1.0 - 0.24 * uVeil;
+
+    // Smooth perceptual highlight shoulder preserving >=4.5:1 white text contrast while allowing bloom glow
     float lum = dot(linear, lumWeights);
     if (lum > uLimit) {
       linear *= (uLimit + (lum - uLimit) * 0.22) / max(0.00001, lum);
     }
-    gl_FragColor = vec4(linear, 1.0);
+
+    // Calibrated 35mm photographic emulsion grain in sRGB across shadows, mids, highlights & DPR
+    vec3 srgb = linearToSrgb3(linear);
+    if (uGrain > 0.0005) {
+      float lumS = dot(srgb, lumWeights);
+      vec3 gVec = opticalEmulsionGrain(gl_FragCoord.xy, uDpr, uTime);
+      float toneWeight = mix(0.72, 1.18, smoothstep(0.03, 0.26, lumS)) * (1.0 - 0.16 * smoothstep(0.72, 0.96, lumS));
+      float amp = (uGrain / 0.23) * 0.084 * toneWeight;
+      srgb = clamp(srgb + gVec * amp, 0.0, 1.0);
+    }
+
+    gl_FragColor = vec4(srgbToLinear3(srgb), 1.0);
     #include <colorspace_fragment>
   }
 `;
